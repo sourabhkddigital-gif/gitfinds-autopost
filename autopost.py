@@ -29,7 +29,7 @@ import requests
 IST = dt.timezone(dt.timedelta(hours=5, minutes=30))
 SHEETS = "https://sheets.googleapis.com/v4/spreadsheets"
 IG_API = "https://graph.instagram.com/v21.0"
-LOOKAHEAD_MIN = 45          # start working this many minutes before posting time
+LOOKAHEAD_MIN = 60          # start working this many minutes before posting time
 LATEST_IST = dt.time(23, 30)  # don't post after this (wait for tomorrow instead)
 HTTP_TIMEOUT = 120
 
@@ -227,7 +227,8 @@ def ig_call(method: str, url: str, token: str, **kw) -> dict:
     return data
 
 
-def instagram_post(path: str, row: dict, post_at: dt.datetime, token: str, fallback_url: str) -> str:
+def instagram_post(path: str, row: dict, post_at: dt.datetime, token: str, fallback_url: str,
+                   publish: bool = True) -> str:
     me = ig_call("GET", f"{IG_API}/me", token, params={"fields": "user_id,username"})
     uid = me.get("user_id") or me["id"]
     log(f"Instagram account: @{me.get('username')}")
@@ -261,6 +262,8 @@ def instagram_post(path: str, row: dict, post_at: dt.datetime, token: str, fallb
     else:
         raise RuntimeError("Instagram is still processing the video after 20 minutes")
 
+    if not publish:
+        return "REHEARSAL OK - video uploaded and processed by Instagram, NOT published"
     wait = (post_at - dt.datetime.now(IST)).total_seconds()
     if wait > 0:
         log(f"Video ready. Waiting {wait / 60:.0f} min to publish at {post_at:%H:%M} IST")
@@ -351,6 +354,25 @@ def run_platform(name: str, tab_name: str, post_time: dt.time, force: bool, dry:
     return True
 
 
+def rehearsal(sheet_token: str) -> None:
+    """Instagram test: upload today's video exactly like a real post, but don't publish it."""
+    now = dt.datetime.now(IST)
+    tab = Tab(sheet_token, env("SHEET_ID"), "Instagram")
+    pick = tab.next_pending(now.date())
+    if not pick:
+        sys.exit("No Pending Instagram row for today")
+    row_no, row = pick
+    log(f"Instagram rehearsal with row {row_no}: {Tab.get(row, 'Instagram Title')[:60]}")
+    fid = drive_id(Tab.get(row, "Video Drive Link"))
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "video.mp4")
+        download(fid, sheet_token, path)
+        result = instagram_post(path, row, now, env("IG_ACCESS_TOKEN"),
+                                f"https://drive.usercontent.google.com/download?id={fid}&export=download&confirm=t",
+                                publish=False)
+    log(f"Instagram: {result}. The sheet was not changed.")
+
+
 def takeover(sheet_token: str) -> None:
     """One-time switch from Postiz: rows Postiz had *scheduled* for today or later go back to Pending."""
     today = dt.datetime.now(IST).date()
@@ -371,7 +393,7 @@ def takeover(sheet_token: str) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--platform", default="both", choices=["both", "youtube", "instagram"])
-    ap.add_argument("--mode", default="normal", choices=["normal", "post-now", "dry-run", "takeover"])
+    ap.add_argument("--mode", default="normal", choices=["normal", "post-now", "dry-run", "takeover", "rehearsal"])
     a = ap.parse_args()
 
     if env("PAUSED", "false", required=False).lower() == "true":
@@ -381,6 +403,9 @@ def main() -> None:
     sheet_token = google_token(env("SHEETS_REFRESH_TOKEN"))
     if a.mode == "takeover":
         takeover(sheet_token)
+        return
+    if a.mode == "rehearsal":
+        rehearsal(sheet_token)
         return
     failed = []
     jobs = [("YouTube", "YouTube", "YT_POST_TIME"), ("Instagram", "Instagram", "IG_POST_TIME")]
