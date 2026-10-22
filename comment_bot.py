@@ -59,6 +59,8 @@ LOG_HEADERS = ["time", "platform", "post_id", "post_url", "commenter_id", "comme
 # ---------------------------------------------------------------- helpers
 def log(msg: str) -> None:
     print(f"[{dt.datetime.now(IST):%H:%M:%S IST}] {msg}", flush=True)
+    if os.environ.get("GITHUB_ACTIONS"):  # also show as an annotation on the run page
+        print(f"::notice::{msg}", flush=True)
 
 
 def env(name: str, default: str | None = None, required: bool = True) -> str:
@@ -384,7 +386,7 @@ def main() -> None:
                 sent += 1
             sheet.append_log(base + ["post-match", reply[:500], status, note[:300]])
             log(f"{platform} {c['user_name']}: {status} ({note})")
-    log(f"done — {sent} replies this run")
+    log(f"done — {sent} replies this run" + (" (dry-run: nothing sent, see Log tab)" if DRY_RUN else ""))
 
 
 if __name__ == "__main__":
