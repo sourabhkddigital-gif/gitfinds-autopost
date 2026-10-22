@@ -375,7 +375,7 @@ def run_platform(name: str, tab_name: str, post_time: dt.time, force: bool, dry:
     log(f"--- {name}: posting time {post_time:%H:%M} IST")
 
     tab = Tab(sheet_token, env("SHEET_ID"), tab_name)
-    if tab.done_today(today) and not force:
+    if tab.done_today(today) and not force and not dry:
         log(f"{name}: today's video is already done. Nothing to do.")
         return True
     if not force and not dry:
