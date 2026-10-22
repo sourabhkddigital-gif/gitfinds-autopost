@@ -83,7 +83,7 @@ class Tab:
     def __init__(self, token: str, sheet_id: str, name: str):
         self.h = {"Authorization": f"Bearer {token}"}
         self.sheet_id, self.name = sheet_id, name
-        r = requests.get(f"{SHEETS}/{sheet_id}/values/{requests.utils.quote(name)}!A1:ZZ2000",
+        r = requests.get(f"{SHEETS}/{sheet_id}/values/" + requests.utils.quote(f"'{name}'!A1:ZZ2000"),
                          headers=self.h, timeout=HTTP_TIMEOUT)
         if r.status_code != 200:
             sys.exit(f"Can't read tab '{name}' ({r.status_code}): {r.text[:300]}")
@@ -117,7 +117,7 @@ class Tab:
             while n:
                 n, rem = divmod(n - 1, 26)
                 letter = chr(65 + rem) + letter
-            data.append({"range": f"{self.name}!{letter}{row_no}", "values": [[value]]})
+            data.append({"range": f"'{self.name}'!{letter}{row_no}", "values": [[value]]})
         if not data:
             return
         r = requests.post(f"{SHEETS}/{self.sheet_id}/values:batchUpdate", headers=self.h,
@@ -292,6 +292,77 @@ def refresh_instagram_token(token: str) -> None:
         else f"WARNING: couldn't save refreshed token: {r.stderr[:300]}")
 
 
+# ---------------------------------------------------------------- repo sheet ("repo shared in zoom group")
+REPO_SHEET_DEFAULT = "176CJln8W2-mol-2FoBz1OJ786UINrFteR48QjPUO3pA"
+GENERIC = {"ai", "the", "and", "for", "with", "tool", "tools", "repo", "repos", "github", "free", "open", "source", "skill"}
+
+
+def _norm(s: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", (s or "").lower())
+
+
+def match_repo(text: str, repos: list) -> tuple | None:
+    """repos: [(sheet_row, repo_url)]. Finds the repo a video is about from its title/description/tags."""
+    t = _norm(text)
+    low = (text or "").lower()
+    name = lambda url: url.strip().rstrip("/").split("/")[-1]
+
+    def whole(n: str) -> bool:  # repo name as a whole word, e.g. "awesome-agents" / "Awesome AITools"
+        parts = [re.escape(x) for x in re.split(r"[-_.]", n.lower()) if x]
+        return bool(parts) and re.search(r"(?<![a-z0-9])" + r"[\s\-_.]*".join(parts) + r"(?![a-z0-9])", low) is not None
+
+    exact = [r for r in repos if len(_norm(name(r[1]))) > 2 and whole(name(r[1]))]
+    if exact:
+        return max(exact, key=lambda r: len(name(r[1])))
+    scored = []
+    for r in repos:
+        toks = [x for x in re.split(r"[-_.]", name(r[1]).lower()) if x and x not in GENERIC and (len(x) >= 3)]
+        if not toks:
+            continue
+        hit = sum(1 for x in toks if x[:5] in t)
+        if hit and (hit / len(toks) >= 0.6) and (hit >= 2 or (len(toks) == 1 and len(toks[0]) >= 5)):
+            scored.append((hit / len(toks), hit, r))
+    scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
+    if scored and (len(scored) == 1 or scored[0][:2] != scored[1][:2]):
+        return scored[0][2]
+    return None
+
+
+def record_link(sheet_token: str, platform: str, row: dict, link: str) -> None:
+    """Puts the posted link in the repo sheet's youtube/Instagram tab, next to the repo the video is about."""
+    try:
+        sid = env("REPO_SHEET_ID", REPO_SHEET_DEFAULT, required=False)
+        meta = requests.get(f"{SHEETS}/{sid}?fields=sheets.properties.title",
+                            headers={"Authorization": f"Bearer {sheet_token}"}, timeout=HTTP_TIMEOUT).json()
+        title = next((x["properties"]["title"] for x in meta.get("sheets", [])
+                      if x["properties"]["title"].strip().lower() == platform.lower()), None)
+        if not title:
+            log(f"WARNING: repo sheet has no '{platform}' tab - link not recorded")
+            return
+        tab = Tab(sheet_token, sid, title)
+        link_col = next((h for h in tab.header if "posted video" in h.lower()), None)
+        if not link_col:
+            log(f"WARNING: no 'posted video' column in repo sheet tab '{title}'")
+            return
+        repos = [(rn, Tab.get(r, "github repo")) for rn, r in tab.rows if Tab.get(r, "github repo")]
+        wanted = Tab.get(row, "Repo No.") or Tab.get(row, "Repo No")
+        hit = None
+        if wanted:
+            hit = next(((rn, u) for rn, r in tab.rows for u in [Tab.get(r, "github repo")]
+                        if Tab.get(r, "no.").strip() == wanted.strip()), None)
+        if not hit:
+            text = " ".join(v for k, v in row.items() if "drive" not in k.lower())
+            hit = match_repo(text, repos)
+        if not hit:
+            log(f"WARNING: couldn't tell which repo this {platform} video is about - add a 'Repo No.' "
+                f"column to the posting sheet, or paste {link} into the repo sheet yourself")
+            return
+        tab.set(hit[0], {link_col: link})
+        log(f"{platform}: link saved in repo sheet next to {hit[1].strip()}")
+    except Exception as e:  # never let this break posting
+        log(f"WARNING: couldn't save link to repo sheet: {e}")
+
+
 # ---------------------------------------------------------------- main
 def run_platform(name: str, tab_name: str, post_time: dt.time, force: bool, dry: bool,
                  sheet_token: str) -> bool:
@@ -349,6 +420,8 @@ def run_platform(name: str, tab_name: str, post_time: dt.time, force: bool, dry:
             log(f"Instagram: published {link}")
     tab.set(row_no, {"Status": "Uploaded", "Schedule Date": f"{post_at:%d/%m/%Y %H:%M}",
                      "Date Uploaded": f"{post_at.day} {post_at:%b}", "Post Link": link})
+    if link.startswith("http"):
+        record_link(sheet_token, name, row, link)
     return True
 
 
