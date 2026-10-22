@@ -147,7 +147,7 @@ function instagramComments_() {
   media.forEach(m => ((m.comments || {}).data || []).forEach(c => {
     [[c, ''], ...(((c.replies || {}).data) || []).map(r => [r, c.id])].forEach(([x]) => {
       if (x.timestamp && new Date(x.timestamp).getTime() < cutoff) return;
-      const frm = x.from || {}, uid = frm.id || x.username || '', uname = frm.username || x.username || '';
+      const frm = x.from || {}, uid = frm.id || x.username || x.id, uname = frm.username || x.username || '';
       out.push({ platform: 'instagram', comment_id: x.id, post_id: m.id, post_url: m.permalink || '', key: urlKey_(m.permalink),
         user_id: uid, user_name: uname, text: x.text || '', is_own: uid === me.id || uname === me.username });
     });
