@@ -20,8 +20,8 @@
 
 const IG_API = 'https://graph.instagram.com/v21.0';
 const YT_API = 'https://www.googleapis.com/youtube/v3';
-const LOOKBACK_HOURS = 72;
-const MAX_PER_RUN = 20;
+const LOOKBACK_HOURS = 24;
+const MAX_PER_RUN = 5;
 const DM_TEXT = 'Hey {name}! Here is the GitHub repo: {repo}\nSetup guide: {guide}\nReply here if you get stuck 🙌';
 const PUBLIC_TEXT_IG = 'Sent you the repo + setup guide in your DMs 📩';
 const PUBLIC_TEXT_YT = 'Here you go 👉 Repo: {repo} | Setup guide: {guide}';
