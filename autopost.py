@@ -328,7 +328,7 @@ def match_repo(text: str, repos: list) -> tuple | None:
     return None
 
 
-def record_link(sheet_token: str, platform: str, row: dict, link: str) -> None:
+def record_link(sheet_token: str, platform: str, row: dict, link: str, write: bool = True) -> None:
     """Puts the posted link in the repo sheet's youtube/Instagram tab, next to the repo the video is about."""
     try:
         sid = env("REPO_SHEET_ID", REPO_SHEET_DEFAULT, required=False)
@@ -356,6 +356,9 @@ def record_link(sheet_token: str, platform: str, row: dict, link: str) -> None:
         if not hit:
             log(f"WARNING: couldn't tell which repo this {platform} video is about - add a 'Repo No.' "
                 f"column to the posting sheet, or paste {link} into the repo sheet yourself")
+            return
+        if not write:
+            log(f"{platform}: link would be saved in repo sheet tab '{title.strip()}' row {hit[0]} ({hit[1].strip()})")
             return
         tab.set(hit[0], {link_col: link})
         log(f"{platform}: link saved in repo sheet next to {hit[1].strip()}")
@@ -401,6 +404,7 @@ def run_platform(name: str, tab_name: str, post_time: dt.time, force: bool, dry:
                 log(f"YouTube: key works for channel '{r.json()['items'][0]['snippet']['title']}'")
             else:
                 log(f"YouTube: key accepted (channel name not readable with upload-only permission: {r.status_code})")
+        record_link(sheet_token, name, row, "(dry-run)", write=False)
         log(f"{name}: DRY RUN - would post now. Nothing posted.")
         return True
 
