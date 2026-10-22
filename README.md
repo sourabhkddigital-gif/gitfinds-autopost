@@ -54,3 +54,27 @@ so no PC, Docker, n8n or Postiz is needed, and power cuts don't matter.
 - **Instagram token.** Meta app → Instagram → *API setup with Instagram login* → **Generate token** for gitfinds.
   - The Instagram account must be a Professional (Creator/Business) account.
   - It must also be a tester of the app.
+
+---
+
+# GitFinds comment bot
+
+Replies to **every new comment** on GitFinds videos with that video's **GitHub repo + user setup guide**.
+Runs on GitHub every 10 minutes — no PC, no n8n, no Docker. Same secrets as the auto-poster.
+
+- **Instagram**: the commenter gets a **DM** with repo + guide, plus a short public reply ("Sent you the repo + setup guide in your DMs 📩").
+- **YouTube**: a public reply with repo + guide (YouTube has no DMs).
+- Sheet: [repo shared in zoom group](https://docs.google.com/spreadsheets/d/176CJln8W2-mol-2FoBz1OJ786UINrFteR48QjPUO3pA) — tabs **Sheet1** (no. | github repo | user setup guide), **youtube** / **Instagram** (same + *posted video url*), **Log** (every comment + what the bot did).
+- Safety: one reply per person per post, spam/abuse skipped, max 20 replies per run, a comment is never handled twice (the Log tab is the memory).
+- A comment on a video that is **not in the sheet** is logged as `flag-no-post` and not answered — add the video's URL to the platform tab with its repo no.
+
+| You want to… | Do this |
+|---|---|
+| Test without replying | **Actions** → *GitFinds comment bot* → **Run workflow** → mode `dry-run` → check the Log tab |
+| Go live | It is live automatically every 10 min. Manual: Run workflow → mode `live` |
+| Pause | Variables → `COMMENTS_PAUSED` = `true` |
+| Change reply text | Variables → `DM_TEXT`, `PUBLIC_TEXT_IG`, `PUBLIC_TEXT_YT` (placeholders `{name}` `{repo}` `{guide}`) |
+
+**Extra secret for YouTube**: `YOUTUBE_COMMENTS_REFRESH_TOKEN` — a YouTube refresh token with scope
+`https://www.googleapis.com/auth/youtube.force-ssl` (OAuth Playground, sign in as the GitFinds channel).
+The upload-only token used by the auto-poster can't read or post comments. Instagram needs nothing extra.

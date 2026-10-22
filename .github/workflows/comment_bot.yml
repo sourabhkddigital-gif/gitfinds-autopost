@@ -1,0 +1,45 @@
+name: GitFinds comment bot
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"   # every 10 minutes (GitHub may delay a few minutes)
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "dry-run = only write what it WOULD reply to the Log tab; live = really reply"
+        type: choice
+        options: [dry-run, live]
+        default: dry-run
+
+concurrency:
+  group: gitfinds-comment-bot
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  reply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - name: Reply to new comments
+        env:
+          COMMENT_SHEET_ID: ${{ vars.COMMENT_SHEET_ID }}
+          COMMENTS_PAUSED: ${{ vars.COMMENTS_PAUSED }}
+          DM_TEXT: ${{ vars.DM_TEXT }}
+          PUBLIC_TEXT_IG: ${{ vars.PUBLIC_TEXT_IG }}
+          PUBLIC_TEXT_YT: ${{ vars.PUBLIC_TEXT_YT }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          SHEETS_REFRESH_TOKEN: ${{ secrets.SHEETS_REFRESH_TOKEN }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+          YOUTUBE_COMMENTS_REFRESH_TOKEN: ${{ secrets.YOUTUBE_COMMENTS_REFRESH_TOKEN }}
+          DRY_RUN: ${{ github.event.inputs.mode == 'dry-run' && 'true' || 'false' }}
+        run: python comment_bot.py
