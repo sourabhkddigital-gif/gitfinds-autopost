@@ -13,7 +13,7 @@ on:
       mode:
         description: "normal = only near posting time, post-now = post the next video immediately, dry-run = just check, post nothing"
         type: choice
-        options: [dry-run, normal, post-now]
+        options: [dry-run, normal, post-now, takeover]
         default: dry-run
 
 concurrency:

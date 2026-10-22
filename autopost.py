@@ -330,10 +330,27 @@ def run_platform(name: str, tab_name: str, post_time: dt.time, force: bool, dry:
     return True
 
 
+def takeover(sheet_token: str) -> None:
+    """One-time switch from Postiz: rows Postiz had *scheduled* for today or later go back to Pending."""
+    today = dt.datetime.now(IST).date()
+    for tab_name in ("YouTube", "Instagram"):
+        tab = Tab(sheet_token, env("SHEET_ID"), tab_name)
+        n = 0
+        for row_no, row in tab.rows:
+            if not re.match(r"^scheduled$", Tab.get(row, "Status"), re.I):
+                continue
+            m = re.match(r"(\d{1,2})/(\d{1,2})/(\d{4})", Tab.get(row, "Schedule Date"))
+            if m and dt.date(int(m.group(3)), int(m.group(2)), int(m.group(1))) >= today:
+                tab.set(row_no, {"Status": "Pending", "Schedule Date": ""})
+                log(f"{tab_name}: row {row_no} back to Pending (was {Tab.get(row, 'Schedule Date')})")
+                n += 1
+        log(f"{tab_name}: {n} row(s) handed over from Postiz")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--platform", default="both", choices=["both", "youtube", "instagram"])
-    ap.add_argument("--mode", default="normal", choices=["normal", "post-now", "dry-run"])
+    ap.add_argument("--mode", default="normal", choices=["normal", "post-now", "dry-run", "takeover"])
     a = ap.parse_args()
 
     if env("PAUSED", "false", required=False).lower() == "true":
@@ -341,6 +358,9 @@ def main() -> None:
         return
     force, dry = a.mode == "post-now", a.mode == "dry-run"
     sheet_token = google_token(env("SHEETS_REFRESH_TOKEN"))
+    if a.mode == "takeover":
+        takeover(sheet_token)
+        return
     failed = []
     jobs = [("YouTube", "YouTube", "YT_POST_TIME"), ("Instagram", "Instagram", "IG_POST_TIME")]
     for name, tab_name, time_var in jobs:
