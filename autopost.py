@@ -294,7 +294,7 @@ def run_platform(name: str, tab_name: str, post_time: dt.time, force: bool, dry:
     if tab.done_today(today) and not force:
         log(f"{name}: today's video is already done. Nothing to do.")
         return True
-    if not force:
+    if not force and not dry:
         if now < target - dt.timedelta(minutes=LOOKAHEAD_MIN):
             log(f"{name}: too early, will post at {post_time:%H:%M}. Nothing to do now.")
             return True
