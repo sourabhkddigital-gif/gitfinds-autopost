@@ -132,11 +132,20 @@ class Tab:
                 return True
         return False
 
-    def next_pending(self):
+    def next_pending(self, today: dt.date):
+        """Pending row for today: a row dated today first, else the first undated (or overdue) row.
+        Pending rows dated in the future are kept for their own day."""
+        undated = None
         for row_no, row in self.rows:
-            if re.match(r"^pending$", self.get(row, "Status"), re.I) and drive_id(self.get(row, "Video Drive Link")):
+            if not (re.match(r"^pending$", self.get(row, "Status"), re.I) and drive_id(self.get(row, "Video Drive Link"))):
+                continue
+            m = re.match(r"(\d{1,2})/(\d{1,2})/(\d{4})", self.get(row, "Schedule Date"))
+            day = dt.date(int(m.group(3)), int(m.group(2)), int(m.group(1))) if m else None
+            if day == today:
                 return row_no, row
-        return None
+            if (day is None or day < today) and undated is None:
+                undated = (row_no, row)
+        return undated
 
 
 def drive_id(url: str) -> str | None:
@@ -301,7 +310,7 @@ def run_platform(name: str, tab_name: str, post_time: dt.time, force: bool, dry:
         if now.time() > LATEST_IST:
             log(f"{name}: too late for today. Will post tomorrow.")
             return True
-    pick = tab.next_pending()
+    pick = tab.next_pending(now.date())
     if not pick:
         log(f"{name}: no 'Pending' rows left in the '{tab_name}' tab! Add more videos.")
         return True
