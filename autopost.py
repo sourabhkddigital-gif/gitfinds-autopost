@@ -234,8 +234,11 @@ def instagram_post(path: str, row: dict, post_at: dt.datetime, token: str, fallb
     log(f"Instagram account: @{me.get('username')}")
     caption = "\n\n".join(x for x in [Tab.get(row, "Instagram Title"), Tab.get(row, "Instagram Hashtags")] if x)[:2200]
 
-    container = None
-    try:  # 1) resumable upload of the file itself
+    try:  # 1) Instagram fetches the video from the Drive link (works with Instagram-login keys)
+        container = ig_call("POST", f"{IG_API}/{uid}/media", token,
+                            params={"media_type": "REELS", "video_url": fallback_url, "caption": caption})["id"]
+    except RuntimeError as e:  # 2) fallback: upload the file itself
+        log(f"Drive-link method didn't work ({e}); trying direct upload")
         c = ig_call("POST", f"{IG_API}/{uid}/media", token,
                     params={"media_type": "REELS", "upload_type": "resumable", "caption": caption})
         size = os.path.getsize(path)
@@ -244,12 +247,7 @@ def instagram_post(path: str, row: dict, post_at: dt.datetime, token: str, fallb
                               headers={"Authorization": f"OAuth {token}", "offset": "0", "file_size": str(size)},
                               data=f, timeout=1800)
         if r.status_code != 200:
-            raise RuntimeError(f"upload {r.status_code}: {r.text[:300]}")
-        container = c["id"]
-    except RuntimeError as e:  # 2) fall back to letting Instagram fetch the Drive link
-        log(f"Direct upload didn't work ({e}); trying via the Drive link")
-        c = ig_call("POST", f"{IG_API}/{uid}/media", token,
-                    params={"media_type": "REELS", "video_url": fallback_url, "caption": caption})
+            raise RuntimeError(f"Instagram upload failed {r.status_code}: {r.text[:300]}")
         container = c["id"]
 
     for _ in range(80):  # wait until Instagram finished processing (max ~20 min)
