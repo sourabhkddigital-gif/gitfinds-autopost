@@ -7,7 +7,7 @@ Runs on GitHub Actions (no PC, no Docker). Every run it:
   3. downloads the video from Google Drive,
   4. posts it (YouTube: uploaded with publishAt = the exact posting time;
      Instagram: Reel uploaded, then published at the posting time),
-  5. marks the row Posted + date (+ link if a "Post Link" column exists).
+  5. marks the row Uploaded + date (+ link if a "Post Link" column exists).
 
 All secrets come from environment variables (GitHub repo secrets).
 """
@@ -127,7 +127,7 @@ class Tab:
 
     def done_today(self, today: str) -> bool:
         for _, row in self.rows:
-            if re.match(r"^(posted|scheduled)$", self.get(row, "Status"), re.I) and \
+            if re.match(r"^(posted|scheduled|uploaded)$", self.get(row, "Status"), re.I) and \
                     self.get(row, "Schedule Date").startswith(today):
                 return True
         return False
@@ -337,7 +337,8 @@ def run_platform(name: str, tab_name: str, post_time: dt.time, force: bool, dry:
             link = instagram_post(path, row, post_at, env("IG_ACCESS_TOKEN"),
                                   f"https://drive.usercontent.google.com/download?id={fid}&export=download&confirm=t")
             log(f"Instagram: published {link}")
-    tab.set(row_no, {"Status": "Posted", "Schedule Date": f"{post_at:%d/%m/%Y %H:%M}", "Post Link": link})
+    tab.set(row_no, {"Status": "Uploaded", "Schedule Date": f"{post_at:%d/%m/%Y %H:%M}",
+                     "Date Uploaded": f"{post_at.day} {post_at:%b}", "Post Link": link})
     return True
 
 

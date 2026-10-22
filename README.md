@@ -13,7 +13,7 @@ so no PC, Docker, n8n or Postiz is needed, and power cuts don't matter.
   3. it posts it:
      - **YouTube** is uploaded with YouTube's own "publish at" set to the exact posting time.
      - **Instagram** is uploaded, then published at the posting time.
-  4. it sets that row to **Status = Posted**, **Schedule Date** = the date and time, and **Post Link** if you add that column.
+  4. it sets that row to **Status = Uploaded**, **Schedule Date** = the date and time, **Date Uploaded** = the day, and **Post Link** if you add that column.
 - One video per platform per day. A run that finds today's video already posted does nothing.
 
 ## Everyday use
