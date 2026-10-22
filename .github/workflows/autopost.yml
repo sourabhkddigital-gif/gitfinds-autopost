@@ -20,6 +20,10 @@ concurrency:
   group: gitfinds-autopost   # never two runs at once (prevents double posts)
   cancel-in-progress: false
 
+permissions:
+  contents: read
+  actions: write   # for the keep-alive step below
+
 jobs:
   post:
     runs-on: ubuntu-latest
@@ -43,3 +47,14 @@ jobs:
           IG_POST_TIME: ${{ vars.IG_POST_TIME }}
           PAUSED: ${{ vars.PAUSED }}
         run: python autopost.py --platform "${{ inputs.platform || 'both' }}" --mode "${{ inputs.mode || 'normal' }}"
+      - name: Keep the daily schedule alive
+        # GitHub turns off scheduled workflows after 60 days without repo activity.
+        # Re-enabling it on the 1st and 15th of each month resets that timer.
+        if: always() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          d=$(TZ=Asia/Kolkata date +%d); h=$(TZ=Asia/Kolkata date +%H)
+          if { [ "$d" = "01" ] || [ "$d" = "15" ]; } && [ "$h" = "08" ]; then
+            gh api -X PUT "repos/${{ github.repository }}/actions/workflows/autopost.yml/enable" && echo "Schedule kept alive"
+          fi
