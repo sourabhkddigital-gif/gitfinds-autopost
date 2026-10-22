@@ -309,6 +309,17 @@ def run_platform(name: str, tab_name: str, post_time: dt.time, force: bool, dry:
     title = Tab.get(row, "YouTube Title") or Tab.get(row, "Instagram Title")
     log(f"{name}: picked row {row_no}: {title[:70]}")
     if dry:
+        if name == "Instagram":
+            me = ig_call("GET", f"{IG_API}/me", env("IG_ACCESS_TOKEN"), params={"fields": "user_id,username"})
+            log(f"Instagram: key works for @{me.get('username')}")
+        else:
+            yt = google_token(env("YOUTUBE_REFRESH_TOKEN"))
+            r = requests.get("https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true",
+                             headers={"Authorization": f"Bearer {yt}"}, timeout=HTTP_TIMEOUT)
+            if r.status_code == 200 and r.json().get("items"):
+                log(f"YouTube: key works for channel '{r.json()['items'][0]['snippet']['title']}'")
+            else:
+                log(f"YouTube: key accepted (channel name not readable with upload-only permission: {r.status_code})")
         log(f"{name}: DRY RUN - would post now. Nothing posted.")
         return True
 
