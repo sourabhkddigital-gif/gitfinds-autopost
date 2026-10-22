@@ -1,0 +1,45 @@
+name: GitFinds daily posting
+
+on:
+  schedule:
+    - cron: "25 2-18 * * *"  # every hour, 7:55 AM - 11:55 PM IST (GitHub may start a few min late)
+  workflow_dispatch:         # "Run workflow" button for manual runs
+    inputs:
+      platform:
+        description: "Which platform"
+        type: choice
+        options: [both, youtube, instagram]
+        default: both
+      mode:
+        description: "normal = only near posting time, post-now = post the next video immediately, dry-run = just check, post nothing"
+        type: choice
+        options: [dry-run, normal, post-now]
+        default: dry-run
+
+concurrency:
+  group: gitfinds-autopost   # never two runs at once (prevents double posts)
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Post videos
+        env:
+          SHEET_ID: ${{ secrets.SHEET_ID }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          SHEETS_REFRESH_TOKEN: ${{ secrets.SHEETS_REFRESH_TOKEN }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          GH_PAT: ${{ secrets.GH_PAT }}
+          YT_POST_TIME: ${{ vars.YT_POST_TIME }}
+          IG_POST_TIME: ${{ vars.IG_POST_TIME }}
+          PAUSED: ${{ vars.PAUSED }}
+        run: python autopost.py --platform "${{ inputs.platform || 'both' }}" --mode "${{ inputs.mode || 'normal' }}"
