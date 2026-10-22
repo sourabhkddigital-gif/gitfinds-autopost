@@ -35,9 +35,9 @@ const LOG_HEADERS = ['time', 'platform', 'post_id', 'post_url', 'commenter_id', 
 // ---------------------------------------------------------------- setup (run once)
 function setup() {
   ScriptApp.getProjectTriggers().forEach(t => { if (t.getHandlerFunction() === 'poll') ScriptApp.deleteTrigger(t); });
-  ScriptApp.newTrigger('poll').timeBased().everyMinutes(1).create();
+  ScriptApp.newTrigger('poll').timeBased().everyMinutes(5).create();
   ensureLog_();
-  Logger.log('OK — poll() now runs every minute.');
+  Logger.log('OK — poll() now runs every 5 minutes.');
 }
 
 function stop() {
