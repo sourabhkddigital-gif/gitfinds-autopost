@@ -20,7 +20,8 @@ so no PC, Docker, n8n or Postiz is needed, and power cuts don't matter.
 
 | You want to… | Do this |
 |---|---|
-| Add videos | Add rows to the sheet with Status **Pending** |
+| Add videos | Add rows to the sheet with Status **Pending**. They go out one per day, top to bottom. |
+| Post a video on a specific day | Put that date in its **Schedule Date** (e.g. `26/10/2026`) and keep Status **Pending**. It waits for that day. |
 | Change the posting time | GitHub → Settings → Secrets and variables → Actions → **Variables** → edit `YT_POST_TIME` / `IG_POST_TIME` (e.g. `18:00`, `7:30 PM`; between 8 AM and 11:30 PM) |
 | Pause everything | Set the variable `PAUSED` to `true` (set `false` to resume) |
 | Post the next video right now | **Actions** tab → *GitFinds daily posting* → **Run workflow** → mode `post-now` |
