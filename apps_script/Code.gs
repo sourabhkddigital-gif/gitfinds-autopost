@@ -203,7 +203,7 @@ function youtubeComments_(token) {
 // ---------------------------------------------------------------- core
 function handle_(c, ctx) {
   const key = c.platform + ':' + c.comment_id;
-  if (ctx.seen.has(key) || c.is_own || !String(c.text).trim()) return false;
+  if (ctx.seen.has(key) || c.is_own || norm_(c.text).startsWith('sent you the repo') || norm_(c.text).startsWith('here you go') || !String(c.text).trim()) return false;
   ctx.seen.add(key);
   const rk = c.platform + ':' + c.post_id + ':' + c.user_id;
   if (ctx.replied.has(rk)) { logRow_(c, 'skip', '', 'skipped', 'already replied to this person on this post'); return false; }
