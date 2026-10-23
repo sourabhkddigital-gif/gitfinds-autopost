@@ -1,0 +1,55 @@
+name: GitFinds YouTube posting
+
+on:
+  schedule:
+    - cron: "55 2-17 * * *"  # every hour at :25 IST, 8:25 AM - 11:25 PM IST (GitHub may start a few min late)
+    - cron: "35 11 * * *"   # backup run 5:05 PM IST
+    - cron: "10 12 * * *"   # backup run 5:40 PM IST
+  workflow_dispatch:         # "Run workflow" button for manual runs
+    inputs:
+      mode:
+        description: "normal = only near posting time, post-now = post the next video immediately, dry-run = just check, post nothing"
+        type: choice
+        options: [dry-run, normal, post-now]
+        default: dry-run
+
+concurrency:
+  group: gitfinds-youtube   # never two runs at once (prevents double posts)
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: write   # for the keep-alive step below
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Post YouTube video
+        env:
+          SHEET_ID: ${{ secrets.SHEET_ID }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          SHEETS_REFRESH_TOKEN: ${{ secrets.SHEETS_REFRESH_TOKEN }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+          YT_POST_TIME: ${{ vars.YT_POST_TIME }}
+          PAUSED: ${{ vars.PAUSED }}
+          YT_PAUSED: ${{ vars.YT_PAUSED }}
+        run: python autopost.py --platform youtube --mode "${{ inputs.mode || 'normal' }}"
+      - name: Keep the daily schedule alive
+        # GitHub turns off scheduled workflows after 60 days without repo activity.
+        # Re-enabling it on the 1st and 15th of each month resets that timer.
+        if: always() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          d=$(TZ=Asia/Kolkata date +%d); h=$(TZ=Asia/Kolkata date +%H)
+          if { [ "$d" = "01" ] || [ "$d" = "15" ]; } && [ "$h" = "08" ]; then
+            gh api -X PUT "repos/${{ github.repository }}/actions/workflows/youtube.yml/enable" && echo "Schedule kept alive"
+          fi

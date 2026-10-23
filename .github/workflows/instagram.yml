@@ -1,4 +1,4 @@
-name: GitFinds daily posting
+name: GitFinds Instagram posting
 
 on:
   schedule:
@@ -7,19 +7,14 @@ on:
     - cron: "10 12 * * *"   # backup run 5:40 PM IST
   workflow_dispatch:         # "Run workflow" button for manual runs
     inputs:
-      platform:
-        description: "Which platform"
-        type: choice
-        options: [both, youtube, instagram]
-        default: both
       mode:
         description: "normal = only near posting time, post-now = post the next video immediately, dry-run = just check, post nothing"
         type: choice
-        options: [dry-run, rehearsal, normal, post-now, takeover]
+        options: [dry-run, rehearsal, normal, post-now]
         default: dry-run
 
 concurrency:
-  group: gitfinds-autopost   # never two runs at once (prevents double posts)
+  group: gitfinds-instagram   # never two runs at once (prevents double posts)
   cancel-in-progress: false
 
 permissions:
@@ -36,19 +31,18 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements.txt
-      - name: Post videos
+      - name: Post Instagram video
         env:
           SHEET_ID: ${{ secrets.SHEET_ID }}
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           SHEETS_REFRESH_TOKEN: ${{ secrets.SHEETS_REFRESH_TOKEN }}
-          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
           GH_PAT: ${{ secrets.GH_PAT }}
-          YT_POST_TIME: ${{ vars.YT_POST_TIME }}
           IG_POST_TIME: ${{ vars.IG_POST_TIME }}
           PAUSED: ${{ vars.PAUSED }}
-        run: python autopost.py --platform "${{ inputs.platform || 'both' }}" --mode "${{ inputs.mode || 'normal' }}"
+          IG_PAUSED: ${{ vars.IG_PAUSED }}
+        run: python autopost.py --platform instagram --mode "${{ inputs.mode || 'normal' }}"
       - name: Keep the daily schedule alive
         # GitHub turns off scheduled workflows after 60 days without repo activity.
         # Re-enabling it on the 1st and 15th of each month resets that timer.
@@ -58,5 +52,5 @@ jobs:
         run: |
           d=$(TZ=Asia/Kolkata date +%d); h=$(TZ=Asia/Kolkata date +%H)
           if { [ "$d" = "01" ] || [ "$d" = "15" ]; } && [ "$h" = "08" ]; then
-            gh api -X PUT "repos/${{ github.repository }}/actions/workflows/autopost.yml/enable" && echo "Schedule kept alive"
+            gh api -X PUT "repos/${{ github.repository }}/actions/workflows/instagram.yml/enable" && echo "Schedule kept alive"
           fi

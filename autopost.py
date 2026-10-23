@@ -487,6 +487,9 @@ def main() -> None:
     for name, tab_name, time_var in jobs:
         if a.platform not in ("both", name.lower()):
             continue
+        if env("YT_PAUSED" if name == "YouTube" else "IG_PAUSED", "false", required=False).lower() == "true":
+            log(f"{name}: paused ({'YT' if name == 'YouTube' else 'IG'}_PAUSED is true) - not posting.")
+            continue
         if name == "Instagram" and not os.environ.get("IG_ACCESS_TOKEN"):
             log("Instagram: IG_ACCESS_TOKEN not set yet - skipping Instagram.")
             continue
@@ -497,7 +500,7 @@ def main() -> None:
             failed.append(name)
 
     now = dt.datetime.now(IST)
-    if os.environ.get("IG_ACCESS_TOKEN") and now.weekday() == 0 and now.hour < 2 and not dry:
+    if os.environ.get("IG_ACCESS_TOKEN") and now.weekday() == 0 and now.hour == 8 and not dry and a.platform in ("both", "instagram"):
         refresh_instagram_token(os.environ["IG_ACCESS_TOKEN"])
     if failed:
         sys.exit(f"Failed: {', '.join(failed)} (GitHub will email you about this run)")

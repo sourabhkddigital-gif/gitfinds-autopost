@@ -6,7 +6,7 @@ so no PC, Docker, n8n or Postiz is needed, and power cuts don't matter.
 
 ## How it works
 
-- GitHub runs `autopost.py` every hour between 8 AM and midnight IST.
+- Two separate GitHub automations, one per platform: **GitFinds YouTube posting** and **GitFinds Instagram posting**. Each runs `autopost.py` for its own platform every hour between 8 AM and midnight IST, independently of the other.
 - In the run shortly before the posting time (default **6:00 PM IST**), for each platform:
   1. it reads the platform's tab ("YouTube" / "Instagram") and takes the first row with **Status = Pending**;
   2. it downloads the video from the Drive link;
@@ -24,7 +24,8 @@ so no PC, Docker, n8n or Postiz is needed, and power cuts don't matter.
 | Post a video on a specific day | Put that date in its **Schedule Date** (e.g. `26/10/2026`) and keep Status **Pending**. It waits for that day. |
 | Change the posting time | GitHub → Settings → Secrets and variables → Actions → **Variables** → edit `YT_POST_TIME` / `IG_POST_TIME` (e.g. `18:00`, `7:30 PM`; between 8 AM and 11:30 PM) |
 | Pause everything | Set the variable `PAUSED` to `true` (set `false` to resume) |
-| Post the next video right now | **Actions** tab → *GitFinds daily posting* → **Run workflow** → mode `post-now` |
+| Pause only one platform | Set `YT_PAUSED` or `IG_PAUSED` to `true` |
+| Post the next video right now | **Actions** tab → *GitFinds YouTube posting* or *GitFinds Instagram posting* → **Run workflow** → mode `post-now` |
 | Check that everything is OK | **Actions** → Run workflow → mode `dry-run` (shows what it would post; posts nothing) |
 | See what happened | **Actions** tab: green tick = OK, red cross = failed. GitHub also emails you when a run fails. |
 
