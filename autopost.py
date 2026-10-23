@@ -120,10 +120,19 @@ class Tab:
             data.append({"range": f"'{self.name}'!{letter}{row_no}", "values": [[value]]})
         if not data:
             return
-        r = requests.post(f"{SHEETS}/{self.sheet_id}/values:batchUpdate", headers=self.h,
-                          json={"valueInputOption": "RAW", "data": data}, timeout=HTTP_TIMEOUT)
-        if r.status_code != 200:
-            log(f"WARNING: could not update sheet row {row_no}: {r.text[:300]}")
+        last = ""
+        for wait in (0, 5, 15, 30, 60):
+            time.sleep(wait)
+            try:
+                r = requests.post(f"{SHEETS}/{self.sheet_id}/values:batchUpdate", headers=self.h,
+                                  json={"valueInputOption": "RAW", "data": data}, timeout=HTTP_TIMEOUT)
+                if r.status_code == 200:
+                    return
+                last = r.text[:300]
+            except requests.RequestException as e:
+                last = str(e)
+        raise RuntimeError(f"Could not update sheet '{self.name}' row {row_no} after 5 tries: {last}. "
+                           "Mark that row Uploaded by hand so it isn't posted twice.")
 
     def done_today(self, today: str) -> bool:
         for _, row in self.rows:
@@ -261,6 +270,14 @@ def instagram_post(path: str, row: dict, post_at: dt.datetime, token: str, fallb
     uid = me.get("user_id") or me["id"]
     log(f"Instagram account: @{me.get('username')}")
     caption = "\n\n".join(x for x in [Tab.get(row, "Instagram Title"), Tab.get(row, "Instagram Hashtags")] if x)[:2200]
+    try:
+        recent = ig_call("GET", f"{IG_API}/me/media", token, params={"fields": "caption,permalink,timestamp", "limit": 10})
+        for m in recent.get("data", []):
+            if caption[:60] and (m.get("caption") or "")[:60] == caption[:60]:
+                log("Instagram: this video is already on the profile - not posting it twice")
+                return m.get("permalink", "")
+    except RuntimeError as e:
+        log(f"(couldn't check recent posts: {e})")
 
     try:  # 1) Instagram fetches the video from the Drive link (works with Instagram-login keys)
         container = ig_call("POST", f"{IG_API}/{uid}/media", token,
@@ -395,6 +412,17 @@ def record_link(sheet_token: str, platform: str, row: dict, link: str, write: bo
 
 
 # ---------------------------------------------------------------- main
+def health_check(name: str, tab: "Tab", now: dt.datetime, sheet_token: str) -> None:
+    """Daily check on in-between days, so a broken key is found before the next posting day."""
+    if name == "YouTube":
+        google_token(env("YOUTUBE_REFRESH_TOKEN"))
+    else:
+        ig_call("GET", f"{IG_API}/me", env("IG_ACCESS_TOKEN"), params={"fields": "user_id,username"})
+    if not tab.next_pending(now.date() + dt.timedelta(days=2)) and not tab.next_pending(now.date()):
+        raise RuntimeError(f"No 'Pending' videos left in the '{tab.name}' tab for the next post. Add new rows.")
+    log(f"{name}: health check OK (key works, next video is ready)")
+
+
 def run_platform(name: str, tab_name: str, post_time: dt.time, force: bool, dry: bool,
                  sheet_token: str) -> bool:
     now = dt.datetime.now(IST)
@@ -412,6 +440,8 @@ def run_platform(name: str, tab_name: str, post_time: dt.time, force: bool, dry:
         nxt = last + dt.timedelta(days=every)
         log(f"{name}: posts every {every} days. Last post {last:%d %b}, so no post today. "
             f"Next post: {nxt:%a %d %b} at {post_time:%H:%M}.")
+        if now.hour == 12 or dry:
+            health_check(name, tab, now, sheet_token)
         return True
     if not force and not dry:
         if now < target - dt.timedelta(minutes=LOOKAHEAD_MIN):
@@ -422,8 +452,8 @@ def run_platform(name: str, tab_name: str, post_time: dt.time, force: bool, dry:
             return True
     pick = tab.next_pending(now.date())
     if not pick:
-        log(f"{name}: no 'Pending' rows left in the '{tab_name}' tab! Add more videos.")
-        return True
+        raise RuntimeError(f"No 'Pending' videos left in the '{tab_name}' tab, so nothing was posted today. "
+                           "Add new rows with Status Pending.")
     row_no, row = pick
     title = Tab.get(row, "YouTube Title") or Tab.get(row, "Instagram Title")
     log(f"{name}: picked row {row_no}: {title[:70]}")

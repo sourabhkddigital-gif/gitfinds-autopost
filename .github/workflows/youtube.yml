@@ -20,6 +20,7 @@ concurrency:
 permissions:
   contents: read
   actions: write   # for the keep-alive step below
+  issues: write    # to open an alert issue (GitHub emails you) when a run fails
 
 jobs:
   post:
@@ -54,3 +55,12 @@ jobs:
           if { [ "$d" = "01" ] || [ "$d" = "15" ]; } && [ "$h" = "08" ]; then
             gh api -X PUT "repos/${{ github.repository }}/actions/workflows/youtube.yml/enable" && echo "Schedule kept alive"
           fi
+      - name: Alert me if something went wrong
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="⚠️ YouTube posting failed - $(TZ=Asia/Kolkata date '+%d %b %Y %H:%M IST')"
+          body="The YouTube automation failed. Open the run to see why: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          gh issue create --repo "${{ github.repository }}" --title "$title" --body "$body" --assignee "${{ github.repository_owner }}" \
+            || gh issue create --repo "${{ github.repository }}" --title "$title" --body "$body"
