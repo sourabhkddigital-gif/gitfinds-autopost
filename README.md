@@ -1,6 +1,6 @@
 # GitFinds auto-poster
 
-Posts one video a day to the **GitFinds YouTube channel** and **@gitfinds Instagram**
+Posts one video **every 2 days** (change with the `POST_EVERY_DAYS` variable) to the **GitFinds YouTube channel** and **@gitfinds Instagram**
 from the Google Sheet "GitFinds | Social Media Automation". It runs on GitHub's servers,
 so no PC, Docker, n8n or Postiz is needed, and power cuts don't matter.
 
@@ -14,13 +14,15 @@ so no PC, Docker, n8n or Postiz is needed, and power cuts don't matter.
      - **YouTube** is uploaded with YouTube's own "publish at" set to the exact posting time.
      - **Instagram** is uploaded, then published at the posting time.
   4. it sets that row to **Status = Uploaded**, **Schedule Date** = the date and time, **Date Uploaded** = the day, and **Post Link** if you add that column.
-- One video per platform per day. A run that finds today's video already posted does nothing.
+- One video per platform every **2 days** (variable `POST_EVERY_DAYS`, e.g. `1` = daily, `3` = every 3 days). It counts from the last posted date in the sheet. On in-between days the runs just say "no post today, next post: …".
+- A Pending row with a date in **Schedule Date** always posts on that date, even on an in-between day.
 
 ## Everyday use
 
 | You want to… | Do this |
 |---|---|
-| Add videos | Add rows to the sheet with Status **Pending**. They go out one per day, top to bottom. |
+| Add videos | Add rows to the sheet with Status **Pending**. They go out one every 2 days, top to bottom. |
+| Change how often it posts | Variables → `POST_EVERY_DAYS` (default `2`) |
 | Post a video on a specific day | Put that date in its **Schedule Date** (e.g. `26/10/2026`) and keep Status **Pending**. It waits for that day. |
 | Change the posting time | GitHub → Settings → Secrets and variables → Actions → **Variables** → edit `YT_POST_TIME` / `IG_POST_TIME` (e.g. `18:00`, `7:30 PM`; between 8 AM and 11:30 PM) |
 | Pause everything | Set the variable `PAUSED` to `true` (set `false` to resume) |

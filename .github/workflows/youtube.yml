@@ -40,6 +40,7 @@ jobs:
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
           YT_POST_TIME: ${{ vars.YT_POST_TIME }}
           PAUSED: ${{ vars.PAUSED }}
+          POST_EVERY_DAYS: ${{ vars.POST_EVERY_DAYS }}
           YT_PAUSED: ${{ vars.YT_PAUSED }}
         run: python autopost.py --platform youtube --mode "${{ inputs.mode || 'normal' }}"
       - name: Keep the daily schedule alive

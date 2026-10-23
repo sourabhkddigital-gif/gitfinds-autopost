@@ -41,6 +41,7 @@ jobs:
           GH_PAT: ${{ secrets.GH_PAT }}
           IG_POST_TIME: ${{ vars.IG_POST_TIME }}
           PAUSED: ${{ vars.PAUSED }}
+          POST_EVERY_DAYS: ${{ vars.POST_EVERY_DAYS }}
           IG_PAUSED: ${{ vars.IG_PAUSED }}
         run: python autopost.py --platform instagram --mode "${{ inputs.mode || 'normal' }}"
       - name: Keep the daily schedule alive

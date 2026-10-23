@@ -132,6 +132,34 @@ class Tab:
                 return True
         return False
 
+    def last_post_date(self, today: dt.date) -> dt.date | None:
+        """Most recent day a video went out on this platform (from Schedule Date or Date Uploaded)."""
+        best = None
+        for _, row in self.rows:
+            if not re.match(r"^(posted|uploaded)$", self.get(row, "Status"), re.I):
+                continue
+            day = None
+            m = re.match(r"(\d{1,2})/(\d{1,2})/(\d{4})", self.get(row, "Schedule Date"))
+            if m:
+                day = dt.date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+            else:
+                try:
+                    d = dt.datetime.strptime(f"{self.get(row, 'Date Uploaded')} {today.year}", "%d %b %Y").date()
+                    day = d if d <= today else d.replace(year=today.year - 1)
+                except ValueError:
+                    pass
+            if day and day <= today and (best is None or day > best):
+                best = day
+        return best
+
+    def dated_pending_today(self, today: dt.date) -> bool:
+        for _, row in self.rows:
+            m = re.match(r"(\d{1,2})/(\d{1,2})/(\d{4})", self.get(row, "Schedule Date"))
+            if re.match(r"^pending$", self.get(row, "Status"), re.I) and m and \
+                    dt.date(int(m.group(3)), int(m.group(2)), int(m.group(1))) == today:
+                return True
+        return False
+
     def next_pending(self, today: dt.date):
         """Pending row for today: a row dated today first, else the first undated (or overdue) row.
         Pending rows dated in the future are kept for their own day."""
@@ -377,6 +405,13 @@ def run_platform(name: str, tab_name: str, post_time: dt.time, force: bool, dry:
     tab = Tab(sheet_token, env("SHEET_ID"), tab_name)
     if tab.done_today(today) and not force and not dry:
         log(f"{name}: today's video is already done. Nothing to do.")
+        return True
+    every = max(1, int(env("POST_EVERY_DAYS", "2", required=False) or 2))
+    last = tab.last_post_date(now.date())
+    if not force and last and (now.date() - last).days < every and not tab.dated_pending_today(now.date()):
+        nxt = last + dt.timedelta(days=every)
+        log(f"{name}: posts every {every} days. Last post {last:%d %b}, so no post today. "
+            f"Next post: {nxt:%a %d %b} at {post_time:%H:%M}.")
         return True
     if not force and not dry:
         if now < target - dt.timedelta(minutes=LOOKAHEAD_MIN):
