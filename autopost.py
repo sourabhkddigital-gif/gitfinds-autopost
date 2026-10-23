@@ -328,13 +328,13 @@ def refresh_instagram_token(token: str) -> None:
         new = ig_call("GET", "https://graph.instagram.com/refresh_access_token", token,
                       params={"grant_type": "ig_refresh_token"})["access_token"]
     except RuntimeError as e:
-        log(f"WARNING: Instagram token refresh failed: {e}")
-        return
+        raise RuntimeError(f"Instagram key renewal failed: {e}")
     r = subprocess.run(["gh", "secret", "set", "IG_ACCESS_TOKEN", "--body", new, "--repo",
                         os.environ["GITHUB_REPOSITORY"]],
                        env={**os.environ, "GH_TOKEN": os.environ["GH_PAT"]}, capture_output=True, text=True)
-    log("Instagram token refreshed (valid for another 60 days)" if r.returncode == 0
-        else f"WARNING: couldn't save refreshed token: {r.stderr[:300]}")
+    if r.returncode != 0:
+        raise RuntimeError(f"Couldn't save the renewed Instagram key: {r.stderr[:300]}")
+    log("Instagram key renewed and saved (valid for another 60 days)")
 
 
 # ---------------------------------------------------------------- repo sheet ("repo shared in zoom group")
@@ -533,9 +533,14 @@ def takeover(sheet_token: str) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--platform", default="both", choices=["both", "youtube", "instagram"])
-    ap.add_argument("--mode", default="normal", choices=["normal", "post-now", "dry-run", "takeover", "rehearsal", "test-alert"])
+    ap.add_argument("--mode", default="normal", choices=["normal", "post-now", "dry-run", "takeover", "rehearsal", "test-alert", "renew-ig-key"])
     a = ap.parse_args()
 
+    if a.mode == "renew-ig-key":
+        if not os.environ.get("GH_PAT"):
+            sys.exit("GH_PAT secret is missing - can't save the renewed Instagram key")
+        refresh_instagram_token(env("IG_ACCESS_TOKEN"))
+        return
     if a.mode == "test-alert":
         sys.exit("TEST ALERT: this run failed on purpose to check that you get an email. Nothing is wrong.")
     if env("PAUSED", "false", required=False).lower() == "true":

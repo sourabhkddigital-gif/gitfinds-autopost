@@ -10,7 +10,7 @@ on:
       mode:
         description: "normal = only near posting time, post-now = post the next video immediately, dry-run = just check, post nothing"
         type: choice
-        options: [dry-run, rehearsal, normal, post-now, test-alert]
+        options: [dry-run, rehearsal, normal, post-now, test-alert, renew-ig-key]
         default: dry-run
 
 concurrency:
