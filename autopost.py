@@ -533,9 +533,11 @@ def takeover(sheet_token: str) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--platform", default="both", choices=["both", "youtube", "instagram"])
-    ap.add_argument("--mode", default="normal", choices=["normal", "post-now", "dry-run", "takeover", "rehearsal"])
+    ap.add_argument("--mode", default="normal", choices=["normal", "post-now", "dry-run", "takeover", "rehearsal", "test-alert"])
     a = ap.parse_args()
 
+    if a.mode == "test-alert":
+        sys.exit("TEST ALERT: this run failed on purpose to check that you get an email. Nothing is wrong.")
     if env("PAUSED", "false", required=False).lower() == "true":
         log("PAUSED is true - not posting anything.")
         return
