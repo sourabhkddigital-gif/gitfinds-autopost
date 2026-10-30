@@ -58,6 +58,17 @@ so no PC, Docker, n8n or Postiz is needed, and power cuts don't matter.
   - The Instagram account must be a Professional (Creator/Business) account.
   - It must also be a tester of the app.
 
+## Daily report
+
+Every evening at **7:00 PM IST** the **GitFinds daily report** automation checks both platforms and sends a report:
+what was posted today (and that it is really live), anything that was due but missed, every video still waiting with
+the date it will go out, and a warning when videos are running low.
+
+- It arrives as a comment on the GitHub issue **"📋 Daily posting report"**, so GitHub emails you and notifies the GitHub app.
+- The same report is on the run's **Summary** page in the Actions tab.
+- Want it now? **Actions → GitFinds daily report → Run workflow**.
+- Optional Telegram: add secrets `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`.
+
 ---
 
 # GitFinds comment bot

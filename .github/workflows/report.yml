@@ -1,0 +1,53 @@
+name: GitFinds daily report
+
+on:
+  schedule:
+    - cron: "30 13 * * *"   # every day 7:00 PM IST (GitHub may start it a few minutes late)
+  workflow_dispatch:          # "Run workflow" button = send a report now
+
+concurrency:
+  group: gitfinds-report
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: write   # read run results + keep-alive
+  issues: write    # post the report as an issue comment (GitHub emails you)
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Build and send the daily report
+        env:
+          SHEET_ID: ${{ secrets.SHEET_ID }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          SHEETS_REFRESH_TOKEN: ${{ secrets.SHEETS_REFRESH_TOKEN }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          YT_POST_TIME: ${{ vars.YT_POST_TIME }}
+          IG_POST_TIME: ${{ vars.IG_POST_TIME }}
+          POST_EVERY_DAYS: ${{ vars.POST_EVERY_DAYS }}
+          PAUSED: ${{ vars.PAUSED }}
+          YT_PAUSED: ${{ vars.YT_PAUSED }}
+          IG_PAUSED: ${{ vars.IG_PAUSED }}
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python report.py
+      - name: Keep the daily schedule alive
+        if: always() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          d=$(TZ=Asia/Kolkata date +%d)
+          if [ "$d" = "01" ] || [ "$d" = "15" ]; then
+            gh api -X PUT "repos/${{ github.repository }}/actions/workflows/report.yml/enable" && echo "Schedule kept alive"
+          fi
