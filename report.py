@@ -150,6 +150,8 @@ def platform_report(name: str, tab_name: str, time_var: str, sheet_token: str, n
             if live is False:
                 problems.append(f"{name}: row {rn} is marked Uploaded but isn't live on {name}")
             lines.append(f"**Today:** {status} — row {rn}: {title_of(r)}" + (f"  \n{link}" if link else ""))
+    elif due and not paused and not any(is_status(r, "pending") and ap.drive_id(Tab.get(r, "Video Drive Link")) for _, r in tab.rows):
+        lines.append("**Today:** ❗ a post is due today but **there is no video left to post**")
     elif due and not paused:
         if now < post_at:
             lines.append(f"**Today:** ⏳ due at {post_time:%H:%M}, not posted yet")
@@ -218,7 +220,7 @@ def send(report: str, ok: bool) -> None:
                             f'"{REPORT_ISSUE_TITLE}" in:title', "--json", "number,title"],
                            capture_output=True, text=True)
         num = next((i["number"] for i in json.loads(q.stdout or "[]") if i["title"] == REPORT_ISSUE_TITLE), None)
-        body = (f"@{owner} " if owner else "") + report
+        body = report + (f"\n\n_cc @{owner}_" if owner else "")
         if num:
             subprocess.run(["gh", "issue", "comment", str(num), "--repo", repo, "--body", body], check=False)
         else:
