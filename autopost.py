@@ -494,6 +494,97 @@ def run_platform(name: str, tab_name: str, post_time: dt.time, force: bool, dry:
     return True
 
 
+def _row_day(row: dict, today: dt.date) -> dt.date | None:
+    m = re.match(r"(\d{1,2})/(\d{1,2})/(\d{4})", Tab.get(row, "Schedule Date"))
+    if m:
+        return dt.date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+    try:
+        d = dt.datetime.strptime(f"{Tab.get(row, 'Date Uploaded')} {today.year}", "%d %b %Y").date()
+        return d if d <= today else d.replace(year=today.year - 1)
+    except ValueError:
+        return None
+
+
+def latest_youtube_post(yt: "Tab", today: dt.date):
+    """(day, row) of the video YouTube published most recently (up to today)."""
+    best = None
+    for _, row in yt.rows:
+        if not re.match(r"^(posted|uploaded)$", Tab.get(row, "Status"), re.I):
+            continue
+        day = _row_day(row, today)
+        if day and day <= today and (best is None or day >= best[0]):
+            best = (day, row)
+    return best
+
+
+def run_instagram_follow(post_time: dt.time, force: bool, dry: bool, sheet_token: str) -> bool:
+    """Instagram follows YouTube: the day after YouTube publishes a video, Instagram posts that same video."""
+    now = dt.datetime.now(IST)
+    target = dt.datetime.combine(now.date(), post_time, tzinfo=IST)
+    log(f"--- Instagram (follows YouTube): posting time {post_time:%H:%M} IST")
+    yt = Tab(sheet_token, env("SHEET_ID"), "YouTube")
+    ig = Tab(sheet_token, env("SHEET_ID"), "Instagram")
+    latest = latest_youtube_post(yt, now.date())
+    if not latest:
+        log("Instagram: YouTube hasn't published anything yet. Nothing to do.")
+        return True
+    yt_day, yt_row = latest
+    fid = drive_id(Tab.get(yt_row, "Video Drive Link"))
+    yt_title = Tab.get(yt_row, "YouTube Title")
+    log(f"Instagram: YouTube's latest video ({yt_day:%d %b}): {yt_title[:70]}")
+    if not fid:
+        raise RuntimeError("YouTube's latest row has no Video Drive Link, so Instagram can't post it.")
+
+    # the same video in the Instagram tab (same Drive file, else same Repo No.)
+    repo_no = (Tab.get(yt_row, "Repo No.") or Tab.get(yt_row, "Repo No")).strip()
+    match = next(((rn, r) for rn, r in ig.rows if drive_id(Tab.get(r, "Video Drive Link")) == fid), None)
+    if not match and repo_no:
+        match = next(((rn, r) for rn, r in ig.rows
+                      if (Tab.get(r, "Repo No.") or Tab.get(r, "Repo No")).strip() == repo_no), None)
+    if match and re.match(r"^(posted|uploaded|scheduled)$", Tab.get(match[1], "Status"), re.I):
+        log(f"Instagram: this video is already on Instagram (row {match[0]}). Nothing to do.")
+        return True
+    if yt_day >= now.date() and not force:
+        log("Instagram: YouTube published it today, so Instagram posts it tomorrow.")
+        return True
+    if not force and not dry:
+        if now < target - dt.timedelta(minutes=LOOKAHEAD_MIN):
+            log(f"Instagram: too early, will post at {post_time:%H:%M}. Nothing to do now.")
+            return True
+        if now.time() > LATEST_IST:
+            log("Instagram: too late for today. Will post tomorrow.")
+            return True
+
+    if match:
+        row_no, row = match
+        log(f"Instagram: using Instagram tab row {row_no} for the caption")
+    else:
+        row_no, row = None, dict(yt_row)
+        if not Tab.get(row, "Instagram Title"):
+            row["Instagram Title"] = yt_title
+        if not Tab.get(row, "Instagram Hashtags"):
+            row["Instagram Hashtags"] = Tab.get(yt_row, "Hashtags")
+        log("Instagram: video not found in the Instagram tab - using the YouTube title and hashtags as caption")
+    if dry:
+        ig_call("GET", f"{IG_API}/me", env("IG_ACCESS_TOKEN"), params={"fields": "user_id,username"})
+        log("Instagram: DRY RUN - would post this video now. Nothing posted.")
+        return True
+
+    post_at = max(target, dt.datetime.now(IST)) if not force else dt.datetime.now(IST)
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "video.mp4")
+        download(fid, sheet_token, path)
+        link = instagram_post(path, row, post_at, env("IG_ACCESS_TOKEN"),
+                              f"https://drive.usercontent.google.com/download?id={fid}&export=download&confirm=t")
+    log(f"Instagram: published {link}")
+    if row_no:
+        ig.set(row_no, {"Status": "Uploaded", "Schedule Date": f"{post_at:%d/%m/%Y %H:%M}",
+                        "Date Uploaded": f"{post_at.day} {post_at:%b}", "Post Link": link})
+    if link.startswith("http"):
+        record_link(sheet_token, "Instagram", row, link)
+    return True
+
+
 def rehearsal(sheet_token: str) -> None:
     """Instagram test: upload today's video exactly like a real post, but don't publish it."""
     now = dt.datetime.now(IST)
@@ -566,7 +657,11 @@ def main() -> None:
             log("Instagram: IG_ACCESS_TOKEN not set yet - skipping Instagram.")
             continue
         try:
-            run_platform(name, tab_name, parse_time(env(time_var, "18:00", required=False)), force, dry, sheet_token)
+            post_time = parse_time(env(time_var, "18:00", required=False))
+            if name == "Instagram" and env("IG_FOLLOW_YOUTUBE", "true", required=False).lower() != "false":
+                run_instagram_follow(post_time, force, dry, sheet_token)
+            else:
+                run_platform(name, tab_name, post_time, force, dry, sheet_token)
         except Exception as e:  # keep going with the other platform
             log(f"ERROR on {name}: {e}")
             failed.append(name)

@@ -47,6 +47,7 @@ jobs:
           PAUSED: ${{ vars.PAUSED }}
           POST_EVERY_DAYS: ${{ vars.POST_EVERY_DAYS }}
           IG_PAUSED: ${{ vars.IG_PAUSED }}
+          IG_FOLLOW_YOUTUBE: ${{ vars.IG_FOLLOW_YOUTUBE }}
         run: python autopost.py --platform instagram --mode "${{ inputs.mode || 'normal' }}"
       - name: Keep the daily schedule alive
         # GitHub turns off scheduled workflows after 60 days without repo activity.
