@@ -14,3 +14,4 @@ retry 2026-11-09 18:54 IST
 retry 2026-11-10 18:53 IST
 retry 2026-11-11 13:2x UTC (18:5x IST) - daily check
 retry 2026-11-11 13:2x UTC (after YouTube upload) - daily check
+retry 2026-11-13 15:05 UTC
