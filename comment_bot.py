@@ -341,7 +341,8 @@ def main() -> None:
     for platform, my_id, items in sources:
         for c in items:
             key = f"{platform}:{c['comment_id']}"
-            if key in seen or c["is_own"] or not c["text"].strip():
+            own_text = norm(c["text"]).startswith(("sent you the repo", "here you go 👉 repo"))
+            if key in seen or c["is_own"] or own_text or not c["text"].strip():
                 continue
             if sent >= MAX_REPLIES_PER_RUN:
                 break

@@ -1,6 +1,10 @@
 """GitFinds auto-poster.
 
-Runs on GitHub Actions (no PC, no Docker). Every run it:
+DAILY MODE (default, --platform daily): one video a day, live on YouTube AND Instagram at the same
+minute (POST_TIME, default 19:00 IST). Prepared up to 60 min before, sheet updated right after,
+then one email with both links (through the Apps Script helper). See run_daily().
+
+Older per-platform mode (--platform youtube / instagram). Every run it:
   1. reads the "YouTube" and "Instagram" tabs of the Google Sheet,
   2. for each platform, if today's post isn't done yet and it's close to the
      posting time, takes the first row with Status = Pending,
@@ -585,6 +589,191 @@ def run_instagram_follow(post_time: dt.time, force: bool, dry: bool, sheet_token
     return True
 
 
+# ---------------------------------------------------------------- daily: YouTube + Instagram together
+DONE_RE = re.compile(r"^(posted|uploaded|scheduled)$", re.I)
+
+
+def notify(subject: str, body: str) -> None:
+    """Email through the GitFinds Google Apps Script helper (goes to ALERT_EMAIL set there)."""
+    url, secret = os.environ.get("EMAIL_HOOK_URL", "").strip(), os.environ.get("EMAIL_HOOK_SECRET", "").strip()
+    log(f"EMAIL: {subject}")
+    if not url or not secret:
+        log("(email not sent: EMAIL_HOOK_URL / EMAIL_HOOK_SECRET not set)")
+        return
+    try:
+        r = requests.post(url, json={"type": "email", "secret": secret, "subject": subject, "body": body},
+                          timeout=60, allow_redirects=True)
+        log(f"email hook answered {r.status_code}: {r.text[:60]}")
+    except requests.RequestException as e:
+        log(f"WARNING: email not sent: {e}")
+
+
+def _same_video(ig: "Tab", yt_row: dict):
+    """The Instagram-tab row for the same video (same Drive file, else same Repo No.)."""
+    fid = drive_id(Tab.get(yt_row, "Video Drive Link"))
+    hit = next(((rn, r) for rn, r in ig.rows if fid and drive_id(Tab.get(r, "Video Drive Link")) == fid), None)
+    repo_no = (Tab.get(yt_row, "Repo No.") or Tab.get(yt_row, "Repo No")).strip()
+    if not hit and repo_no:
+        hit = next(((rn, r) for rn, r in ig.rows
+                    if (Tab.get(r, "Repo No.") or Tab.get(r, "Repo No")).strip() == repo_no), None)
+    return hit
+
+
+def _append_row(tab: "Tab", values: dict) -> None:
+    row = [values.get(h, "") for h in tab.header]
+    r = requests.post(f"{SHEETS}/{tab.sheet_id}/values/" + requests.utils.quote(f"'{tab.name}'!A1") +
+                      ":append?valueInputOption=RAW", headers=tab.h, json={"values": [row]}, timeout=HTTP_TIMEOUT)
+    if r.status_code != 200:
+        log(f"WARNING: couldn't add a row to '{tab.name}': {r.text[:200]}")
+
+
+def _youtube_is_live(link: str) -> bool:
+    try:
+        return requests.get("https://www.youtube.com/oembed", params={"url": link, "format": "json"},
+                            timeout=30).status_code == 200
+    except requests.RequestException:
+        return False
+
+
+def run_daily(force: bool, dry: bool, sheet_token: str) -> None:
+    """One video a day: prepared before the posting time, live on YouTube AND Instagram at the same minute,
+    sheet updated right after, then one email with both links."""
+    now = dt.datetime.now(IST)
+    today, today_s = now.date(), now.strftime("%d/%m/%Y")
+    post_time = parse_time(env("POST_TIME", "19:00", required=False))
+    target = dt.datetime.combine(today, post_time, tzinfo=IST)
+    every = max(1, int(env("POST_EVERY_DAYS", "1", required=False) or 1))
+    yt_paused = env("YT_PAUSED", "false", required=False).lower() == "true"
+    ig_paused = env("IG_PAUSED", "false", required=False).lower() == "true" or not os.environ.get("IG_ACCESS_TOKEN")
+    log(f"--- Daily post: {post_time:%H:%M} IST on YouTube + Instagram, every {every} day(s)")
+
+    yt = Tab(sheet_token, env("SHEET_ID"), "YouTube")
+    ig = Tab(sheet_token, env("SHEET_ID"), "Instagram")
+    pending_left = lambda skip=None: sum(1 for rn, r in yt.rows if rn != skip and drive_id(Tab.get(r, "Video Drive Link"))
+                                         and re.match(r"^pending$", Tab.get(r, "Status"), re.I))
+
+    # 1) today's video: already started today, or the next Pending one
+    started = next(((rn, r) for rn, r in yt.rows if DONE_RE.match(Tab.get(r, "Status"))
+                    and Tab.get(r, "Schedule Date").startswith(today_s)), None)
+    if started:
+        row_no, row, yt_done = started[0], started[1], True
+        log(f"Today's video (row {row_no}) is already on YouTube: {Tab.get(row, 'YouTube Title')[:70]}")
+    else:
+        if not force and not dry:
+            last = yt.last_post_date(today)
+            if last and (today - last).days < every and not yt.dated_pending_today(today):
+                log(f"No post today (every {every} days, last post {last:%d %b}).")
+                return
+            if now < target - dt.timedelta(minutes=LOOKAHEAD_MIN):
+                log(f"Too early - preparation starts at {(target - dt.timedelta(minutes=LOOKAHEAD_MIN)):%H:%M}.")
+                return
+            if now.time() > LATEST_IST:
+                log("Too late for today - the video goes out tomorrow.")
+                return
+        pick = yt.next_pending(today)
+        if not pick:
+            msg = ("No 'Pending' videos left in the 'YouTube' tab, so nothing can be posted today. "
+                   "Add new rows (Drive link, titles, hashtags) with Status Pending.")
+            if not dry:
+                notify("❌ GitFinds: no video to post today", msg)
+            raise RuntimeError(msg)
+        row_no, row, yt_done = pick[0], pick[1], False
+        log(f"Today's video: row {row_no}: {Tab.get(row, 'YouTube Title')[:70]}")
+    yt_link = Tab.get(row, "Post Link")
+
+    ig_match = _same_video(ig, row)
+    ig_done = bool(ig_match and DONE_RE.match(Tab.get(ig_match[1], "Status")))
+    ig_link = Tab.get(ig_match[1], "Post Link") if ig_match else ""
+    ig_row = dict(ig_match[1]) if ig_match else {}
+    if not Tab.get(ig_row, "Instagram Title"):
+        ig_row["Instagram Title"] = Tab.get(row, "Instagram Title") or Tab.get(row, "YouTube Title")
+    if not Tab.get(ig_row, "Instagram Hashtags"):
+        ig_row["Instagram Hashtags"] = Tab.get(row, "Instagram Hashtags") or Tab.get(row, "Hashtags")
+
+    if dry:
+        yt_tok = google_token(env("YOUTUBE_REFRESH_TOKEN"))
+        log("YouTube: login works" if yt_tok else "YouTube: login FAILED")
+        if not ig_paused:
+            me = ig_call("GET", f"{IG_API}/me", env("IG_ACCESS_TOKEN"), params={"fields": "user_id,username"})
+            log(f"Instagram: login works for @{me.get('username')}")
+        log(f"Instagram caption would be: {Tab.get(ig_row, 'Instagram Title')[:80]}")
+        log(f"DRY RUN - would post row {row_no} at {post_time:%H:%M} on both. Nothing posted. Videos left: {pending_left()}")
+        return
+
+    post_at = dt.datetime.now(IST) if force else max(target, dt.datetime.now(IST))
+    errors, did = [], False
+    fid = drive_id(Tab.get(row, "Video Drive Link"))
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "video.mp4")
+        if not (yt_done or yt_paused) or not (ig_done or ig_paused):
+            download(fid, sheet_token, path)
+
+        # 2) YouTube: uploaded now, goes public by itself at the posting time
+        if not yt_done and not yt_paused:
+            try:
+                future = post_at - dt.datetime.now(IST) > dt.timedelta(minutes=10)
+                yt_link = youtube_upload(path, row, post_at if future else None,
+                                         google_token(env("YOUTUBE_REFRESH_TOKEN")))
+                yt.set(row_no, {"Status": "Scheduled" if future else "Uploaded",
+                                "Schedule Date": f"{post_at:%d/%m/%Y %H:%M}", "Post Link": yt_link})
+                yt_done, did = True, True
+                log(f"YouTube: uploaded {yt_link} - " + (f"goes public at {post_at:%H:%M}" if future else "public now"))
+                record_link(sheet_token, "YouTube", row, yt_link)
+            except Exception as e:
+                errors.append(f"YouTube: {e}")
+                log(f"ERROR YouTube: {e}")
+
+        # 3) Instagram: uploaded + processed now, published at the posting time (same minute as YouTube)
+        if not ig_done and not ig_paused:
+            try:
+                ig_link = instagram_post(path, ig_row, post_at, env("IG_ACCESS_TOKEN"),
+                                         f"https://drive.usercontent.google.com/download?id={fid}&export=download&confirm=t")
+                vals = {"Status": "Uploaded", "Schedule Date": f"{post_at:%d/%m/%Y %H:%M}",
+                        "Date Uploaded": f"{post_at.day} {post_at:%b}", "Post Link": ig_link}
+                if ig_match:
+                    ig.set(ig_match[0], vals)
+                else:
+                    _append_row(ig, {**{h: Tab.get(ig_row, h) for h in ig.header}, **vals,
+                                     "Video Drive Link": Tab.get(row, "Video Drive Link"),
+                                     "Created Date": Tab.get(row, "Created Date")})
+                ig_done, did = True, True
+                log(f"Instagram: published {ig_link}")
+                if ig_link.startswith("http"):
+                    record_link(sheet_token, "Instagram", row, ig_link)
+            except Exception as e:
+                errors.append(f"Instagram: {e}")
+                log(f"ERROR Instagram: {e}")
+
+    # 4) after the posting time: confirm YouTube is live, mark the row Posted
+    if yt_done and not yt_paused and dt.datetime.now(IST) >= target - dt.timedelta(minutes=1):
+        live = False
+        for _ in range(10):
+            if yt_link and _youtube_is_live(yt_link):
+                live = True
+                break
+            time.sleep(30)
+        if live:
+            yt.set(row_no, {"Status": "Uploaded", "Date Uploaded": f"{post_at.day} {post_at:%b}"})
+        else:
+            errors.append(f"YouTube: video uploaded ({yt_link}) but not public yet - check YouTube Studio")
+
+    left = pending_left(skip=row_no)
+    stock = f"\n\n📦 Videos left: {left}" + ("  ⚠️ fewer than 7 - please add more Pending rows" if left < 7 else "")
+    title = Tab.get(row, "YouTube Title")
+    yt_txt = "paused" if yt_paused else (yt_link if yt_done else "NOT posted")
+    ig_txt = "paused" if ig_paused else (ig_link if ig_done else "NOT posted")
+    if did and (yt_done or yt_paused) and (ig_done or ig_paused) and not errors:
+        notify(f"✅ GitFinds: both posts live ({post_at:%d %b}, {post_at:%I:%M %p})",
+               f"🎬 Video: {title}\n\n▶️ YouTube: {yt_txt}\n📸 Instagram: {ig_txt}\n\n"
+               f"📋 Sheet row {row_no} marked Uploaded.{stock}")
+    elif errors and dt.datetime.now(IST) >= target - dt.timedelta(minutes=5):
+        notify(f"⚠️ GitFinds: posting problem ({post_at:%d %b})",
+               f"🎬 Video: {title}\n\n▶️ YouTube: {yt_txt}\n📸 Instagram: {ig_txt}\n\nProblem:\n" + "\n".join(errors) +
+               f"\n\nThe robot tries again at its next check. Nothing is ever posted twice.{stock}")
+    if errors:
+        raise RuntimeError("; ".join(errors))
+
+
 def rehearsal(sheet_token: str) -> None:
     """Instagram test: upload today's video exactly like a real post, but don't publish it."""
     now = dt.datetime.now(IST)
@@ -623,8 +812,9 @@ def takeover(sheet_token: str) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--platform", default="both", choices=["both", "youtube", "instagram"])
-    ap.add_argument("--mode", default="normal", choices=["normal", "post-now", "dry-run", "takeover", "rehearsal", "test-alert", "renew-ig-key"])
+    ap.add_argument("--platform", default="daily", choices=["daily", "both", "youtube", "instagram"])
+    ap.add_argument("--mode", default="normal", choices=["normal", "post-now", "dry-run", "takeover", "rehearsal", "test-alert",
+                                                          "test-email", "renew-ig-key"])
     a = ap.parse_args()
 
     if a.mode == "renew-ig-key":
@@ -634,6 +824,9 @@ def main() -> None:
         return
     if a.mode == "test-alert":
         sys.exit("TEST ALERT: this run failed on purpose to check that you get an email. Nothing is wrong.")
+    if a.mode == "test-email":
+        notify("🧪 GitFinds: test email", "This is a test from the GitFinds posting robot. Emails are working.")
+        return
     if env("PAUSED", "false", required=False).lower() == "true":
         log("PAUSED is true - not posting anything.")
         return
@@ -644,6 +837,18 @@ def main() -> None:
         return
     if a.mode == "rehearsal":
         rehearsal(sheet_token)
+        return
+    if a.platform == "daily":
+        now = dt.datetime.now(IST)
+        if os.environ.get("IG_ACCESS_TOKEN") and now.weekday() == 0 and now.hour == 18 and not dry:
+            try:
+                refresh_instagram_token(os.environ["IG_ACCESS_TOKEN"])
+            except Exception as e:
+                log(f"WARNING: {e}")
+        try:
+            run_daily(force, dry, sheet_token)
+        except Exception as e:
+            sys.exit(f"Failed: {e}")
         return
     failed = []
     jobs = [("YouTube", "YouTube", "YT_POST_TIME"), ("Instagram", "Instagram", "IG_POST_TIME")]

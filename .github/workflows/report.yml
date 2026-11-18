@@ -1,8 +1,8 @@
 name: GitFinds daily report
 
 on:
-  schedule:
-    - cron: "30 13 * * *"   # every day 7:00 PM IST (GitHub may start it a few minutes late)
+  # Daily schedule turned off: the posting robot now emails the result right after posting,
+  # and the comment bot emails a daily comment summary. Run it by hand if you want the old report.
   workflow_dispatch:          # "Run workflow" button = send a report now
 
 concurrency:
