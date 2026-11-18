@@ -57,6 +57,7 @@ jobs:
           PAUSED: ${{ vars.PAUSED }}
           YT_PAUSED: ${{ vars.YT_PAUSED }}
           IG_PAUSED: ${{ vars.IG_PAUSED }}
+          GH_TOKEN: ${{ github.token }}
         run: python autopost.py --platform daily --mode "${{ inputs.mode || 'normal' }}"
       - name: Keep the daily schedule alive
         # GitHub turns off scheduled workflows after 60 days without repo activity.
@@ -68,16 +69,3 @@ jobs:
           if { [ "$d" = "01" ] || [ "$d" = "15" ]; } && [ "$h" = "18" ]; then
             gh api -X PUT "repos/${{ github.repository }}/actions/workflows/post.yml/enable" && echo "Schedule kept alive"
           fi
-      - name: Alert on GitHub if email is not set up
-        if: failure()
-        env:
-          GH_TOKEN: ${{ github.token }}
-          HAS_EMAIL: ${{ secrets.EMAIL_HOOK_URL != '' }}
-        run: |
-          if [ "$HAS_EMAIL" = "true" ]; then echo "Problem already emailed."; exit 0; fi
-          title="⚠️ GitFinds posting failed - $(TZ=Asia/Kolkata date '+%d %b %Y')"
-          body="The daily posting failed. Open the run to see why: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          if gh issue list --repo "${{ github.repository }}" --state open --search "\"$title\" in:title" --json number --jq 'length' | grep -qv '^0$'; then
-            echo "Already reported today."; exit 0
-          fi
-          gh issue create --repo "${{ github.repository }}" --title "$title" --body "$body"

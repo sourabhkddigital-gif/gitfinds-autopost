@@ -593,12 +593,44 @@ def run_instagram_follow(post_time: dt.time, force: bool, dry: bool, sheet_token
 DONE_RE = re.compile(r"^(posted|uploaded|scheduled)$", re.I)
 
 
+GH_UPDATES_TITLE = "📬 GitFinds updates"
+NOTIFIED = []
+
+
+def github_note(subject: str, body: str) -> None:
+    """Posts the message as a comment on the "📬 GitFinds updates" GitHub issue, tagging the owner,
+    so GitHub emails it (like the old alerts). Works with the workflow's own token."""
+    tok, repo = os.environ.get("GH_TOKEN", "").strip(), os.environ.get("GITHUB_REPOSITORY", "").strip()
+    if not tok or not repo:
+        log("(GitHub note skipped: not running on GitHub)")
+        return
+    h = {"Authorization": f"Bearer {tok}", "Accept": "application/vnd.github+json"}
+    owner, api = repo.split("/")[0], f"https://api.github.com/repos/{repo}"
+    text = f"### {subject}\n\n{body}\n\n_cc @{owner}_"
+    try:
+        found = requests.get(f"{api}/issues", headers=h, timeout=60,
+                             params={"state": "open", "per_page": 100, "creator": "github-actions[bot]"}).json()
+        num = next((i["number"] for i in found if isinstance(i, dict) and i.get("title") == GH_UPDATES_TITLE), None)
+        if num:
+            r = requests.post(f"{api}/issues/{num}/comments", headers=h, json={"body": text}, timeout=60)
+        else:
+            r = requests.post(f"{api}/issues", headers=h, timeout=60, json={
+                "title": GH_UPDATES_TITLE, "assignees": [owner],
+                "body": "Every GitFinds posting update is posted here as a comment, so GitHub emails it.\n\n---\n\n" + text})
+        log(f"GitHub update posted ({r.status_code}) - GitHub emails it to the owner")
+    except requests.RequestException as e:
+        log(f"WARNING: GitHub update not posted: {e}")
+
+
 def notify(subject: str, body: str) -> None:
-    """Email through the GitFinds Google Apps Script helper (goes to ALERT_EMAIL set there)."""
+    """Sends an update two ways: a GitHub notice (GitHub emails it) and, if set up,
+    an email through the GitFinds Google Apps Script helper (goes to ALERT_EMAIL set there)."""
+    NOTIFIED.append(subject)
+    github_note(subject, body)
     url, secret = os.environ.get("EMAIL_HOOK_URL", "").strip(), os.environ.get("EMAIL_HOOK_SECRET", "").strip()
     log(f"EMAIL: {subject}")
     if not url or not secret:
-        log("(email not sent: EMAIL_HOOK_URL / EMAIL_HOOK_SECRET not set)")
+        log("(Apps Script email not set up yet - sent through GitHub only)")
         return
     try:
         r = requests.post(url, json={"type": "email", "secret": secret, "subject": subject, "body": body},
@@ -829,7 +861,9 @@ def main() -> None:
     if a.mode == "test-alert":
         sys.exit("TEST ALERT: this run failed on purpose to check that you get an email. Nothing is wrong.")
     if a.mode == "test-email":
-        notify("🧪 GitFinds: test email", "This is a test from the GitFinds posting robot. Emails are working.")
+        notify("🧪 GitFinds: test email", "This is a test from the GitFinds posting robot. If you can read this, notifications are working.\n\n"
+               "Every day after 7:00 PM you will get a message like this:\n\n"
+               "✅ GitFinds: both posts live\n🎬 Video: <title>\n▶️ YouTube: <link>\n📸 Instagram: <link>\n📦 Videos left: <number>")
         return
     if env("PAUSED", "false", required=False).lower() == "true":
         log("PAUSED is true - not posting anything.")
@@ -852,6 +886,9 @@ def main() -> None:
         try:
             run_daily(force, dry, sheet_token)
         except Exception as e:
+            if not NOTIFIED and not dry:   # e.g. a login stopped working
+                notify("⚠️ GitFinds: posting robot problem", f"The daily posting stopped with this error:\n\n{e}\n\n"
+                       "The robot tries again at its next check. Nothing is ever posted twice.")
             sys.exit(f"Failed: {e}")
         return
     failed = []
