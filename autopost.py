@@ -748,9 +748,11 @@ def run_daily(force: bool, dry: bool, sheet_token: str) -> None:
 
     # 4) after the posting time: confirm YouTube is live, mark the row Posted
     if yt_done and not yt_paused and dt.datetime.now(IST) >= target - dt.timedelta(minutes=1):
-        live = False
-        for _ in range(10):
-            if yt_link and _youtube_is_live(yt_link):
+        live = not yt_link.startswith("http")  # no saved link (no "Post Link" column): trust YouTube's schedule
+        if not live:
+            log("Waiting for YouTube to make the video public...")
+        for _ in range(0 if live else 10):
+            if _youtube_is_live(yt_link):
                 live = True
                 break
             time.sleep(30)
