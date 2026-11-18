@@ -17,9 +17,9 @@ on:
   workflow_dispatch:         # "Run workflow" button / started by the Apps Script helper
     inputs:
       mode:
-        description: "normal = post today's video at the posting time, dry-run = only check (posts nothing), post-now = post the next video immediately, test-email = send a test email"
+        description: "normal = post today's video at the posting time, dry-run = only check (posts nothing), post-now = post the next video immediately, test-email = send a test email, full-test = demo video: private YouTube upload + unpublished Instagram upload"
         type: choice
-        options: [normal, dry-run, post-now, test-email, renew-ig-key]
+        options: [normal, dry-run, full-test, post-now, test-email, renew-ig-key]
         default: normal
 
 concurrency:

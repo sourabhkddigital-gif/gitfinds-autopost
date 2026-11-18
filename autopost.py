@@ -221,7 +221,7 @@ def download(file_id: str, token: str, dest: str) -> None:
 
 
 # ---------------------------------------------------------------- YouTube
-def youtube_upload(path: str, row: dict, publish_at: dt.datetime | None, token: str) -> str:
+def youtube_upload(path: str, row: dict, publish_at: dt.datetime | None, token: str, private: bool = False) -> str:
     title = Tab.get(row, "YouTube Title")[:100] or "New video"
     description = "\n\n".join(x for x in [Tab.get(row, "Description"), Tab.get(row, "Hashtags")] if x)[:4900]
     tags, total = [], 0
@@ -230,7 +230,9 @@ def youtube_upload(path: str, row: dict, publish_at: dt.datetime | None, token: 
             tags.append(t)
             total += len(t) + 1
     status = {"selfDeclaredMadeForKids": False}
-    if publish_at:
+    if private:
+        status["privacyStatus"] = "private"
+    elif publish_at:
         status.update(privacyStatus="private", publishAt=publish_at.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z"))
     else:
         status["privacyStatus"] = "public"
@@ -810,6 +812,59 @@ def run_daily(force: bool, dry: bool, sheet_token: str) -> None:
         raise RuntimeError("; ".join(errors))
 
 
+def full_test(sheet_token: str) -> None:
+    """End-to-end test with a demo video, WITHOUT posting anything publicly and without changing the sheet:
+    Drive download -> YouTube upload as PRIVATE (then deleted if the login allows) -> Instagram upload +
+    processing WITHOUT publishing (Instagram drops unpublished uploads by itself) -> notification."""
+    yt = Tab(sheet_token, env("SHEET_ID"), "YouTube")
+    done = [(rn, r) for rn, r in yt.rows if drive_id(Tab.get(r, "Video Drive Link"))]
+    if not done:
+        sys.exit("No row with a Drive link to use as the demo video")
+    row_no, row = done[-1]
+    row = dict(row)
+    row["YouTube Title"] = "[TEST] GitFinds robot test - private, will be deleted"
+    row["Instagram Title"], row["Instagram Hashtags"] = "[TEST] GitFinds robot test - not published", ""
+    fid = drive_id(Tab.get(row, "Video Drive Link"))
+    log(f"Demo video: row {row_no} ({Tab.get(done[-1][1], 'YouTube Title')[:60]})")
+    res = {}
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "video.mp4")
+        try:
+            download(fid, sheet_token, path)
+            res["Drive download"] = f"OK ({os.path.getsize(path) / 1e6:.1f} MB)"
+        except Exception as e:
+            res["Drive download"] = f"FAILED: {e}"
+            path = None
+        if path:
+            try:
+                tok = google_token(env("YOUTUBE_REFRESH_TOKEN"))
+                link = youtube_upload(path, row, None, tok, private=True)
+                res["YouTube upload (private)"] = f"OK {link}"
+                vid = link.rstrip("/").split("/")[-1]
+                r = requests.delete("https://www.googleapis.com/youtube/v3/videos", params={"id": vid},
+                                    headers={"Authorization": f"Bearer {tok}"}, timeout=HTTP_TIMEOUT)
+                res["YouTube test video deleted"] = ("OK" if r.status_code == 204 else
+                    f"NO ({r.status_code}) - the upload-only login can't delete. It is PRIVATE (nobody sees it); "
+                    f"delete it in YouTube Studio > Content: {link}")
+            except Exception as e:
+                res["YouTube upload (private)"] = f"FAILED: {e}"
+            try:
+                out = instagram_post(path, row, dt.datetime.now(IST), env("IG_ACCESS_TOKEN"),
+                                     f"https://drive.usercontent.google.com/download?id={fid}&export=download&confirm=t",
+                                     publish=False)
+                res["Instagram upload + processing (not published)"] = f"OK - {out}"
+            except Exception as e:
+                res["Instagram upload + processing (not published)"] = f"FAILED: {e}"
+    ok = all(not v.startswith("FAILED") for v in res.values())
+    lines = "\n".join(f"- {'✅' if not v.startswith(('FAILED', 'NO')) else ('⚠️' if v.startswith('NO') else '❌')} {k}: {v}"
+                      for k, v in res.items())
+    log("RESULT:\n" + lines)
+    notify(("✅" if ok else "❌") + " GitFinds: full system test " + ("passed" if ok else "had problems"),
+           "Test with a demo video. Nothing was posted publicly and the sheet was not changed.\n\n" + lines)
+    if not ok:
+        sys.exit("Full test had problems (see above)")
+
+
 def rehearsal(sheet_token: str) -> None:
     """Instagram test: upload today's video exactly like a real post, but don't publish it."""
     now = dt.datetime.now(IST)
@@ -850,7 +905,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--platform", default="daily", choices=["daily", "both", "youtube", "instagram"])
     ap.add_argument("--mode", default="normal", choices=["normal", "post-now", "dry-run", "takeover", "rehearsal", "test-alert",
-                                                          "test-email", "renew-ig-key"])
+                                                          "test-email", "full-test", "renew-ig-key"])
     a = ap.parse_args()
 
     if a.mode == "renew-ig-key":
@@ -875,6 +930,9 @@ def main() -> None:
         return
     if a.mode == "rehearsal":
         rehearsal(sheet_token)
+        return
+    if a.mode == "full-test":
+        full_test(sheet_token)
         return
     if a.platform == "daily":
         now = dt.datetime.now(IST)
