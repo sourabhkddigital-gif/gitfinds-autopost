@@ -75,6 +75,9 @@ jobs:
           HAS_EMAIL: ${{ secrets.EMAIL_HOOK_URL != '' }}
         run: |
           if [ "$HAS_EMAIL" = "true" ]; then echo "Problem already emailed."; exit 0; fi
-          title="⚠️ GitFinds posting failed - $(TZ=Asia/Kolkata date '+%d %b %Y %H:%M IST')"
+          title="⚠️ GitFinds posting failed - $(TZ=Asia/Kolkata date '+%d %b %Y')"
           body="The daily posting failed. Open the run to see why: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          if gh issue list --repo "${{ github.repository }}" --state open --search "\"$title\" in:title" --json number --jq 'length' | grep -qv '^0$'; then
+            echo "Already reported today."; exit 0
+          fi
           gh issue create --repo "${{ github.repository }}" --title "$title" --body "$body"
