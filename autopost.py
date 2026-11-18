@@ -649,6 +649,13 @@ def run_daily(force: bool, dry: bool, sheet_token: str) -> None:
 
     yt = Tab(sheet_token, env("SHEET_ID"), "YouTube")
     ig = Tab(sheet_token, env("SHEET_ID"), "Instagram")
+    log("Google Sheet + Drive login: works")
+    if dry:  # check every login first, so a test is useful even with no videos waiting
+        google_token(env("YOUTUBE_REFRESH_TOKEN"))
+        log("YouTube login: works")
+        if not ig_paused:
+            me = ig_call("GET", f"{IG_API}/me", env("IG_ACCESS_TOKEN"), params={"fields": "user_id,username"})
+            log(f"Instagram login: works (@{me.get('username')})")
     pending_left = lambda skip=None: sum(1 for rn, r in yt.rows if rn != skip and drive_id(Tab.get(r, "Video Drive Link"))
                                          and re.match(r"^pending$", Tab.get(r, "Status"), re.I))
 
@@ -691,11 +698,6 @@ def run_daily(force: bool, dry: bool, sheet_token: str) -> None:
         ig_row["Instagram Hashtags"] = Tab.get(row, "Instagram Hashtags") or Tab.get(row, "Hashtags")
 
     if dry:
-        yt_tok = google_token(env("YOUTUBE_REFRESH_TOKEN"))
-        log("YouTube: login works" if yt_tok else "YouTube: login FAILED")
-        if not ig_paused:
-            me = ig_call("GET", f"{IG_API}/me", env("IG_ACCESS_TOKEN"), params={"fields": "user_id,username"})
-            log(f"Instagram: login works for @{me.get('username')}")
         log(f"Instagram caption would be: {Tab.get(ig_row, 'Instagram Title')[:80]}")
         log(f"DRY RUN - would post row {row_no} at {post_time:%H:%M} on both. Nothing posted. Videos left: {pending_left()}")
         return
