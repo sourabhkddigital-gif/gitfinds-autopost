@@ -41,5 +41,7 @@ jobs:
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
           YOUTUBE_COMMENTS_REFRESH_TOKEN: ${{ secrets.YOUTUBE_COMMENTS_REFRESH_TOKEN }}
+          YOUTUBE_COMMENTS_CLIENT_ID: ${{ secrets.YOUTUBE_COMMENTS_CLIENT_ID }}
+          YOUTUBE_COMMENTS_CLIENT_SECRET: ${{ secrets.YOUTUBE_COMMENTS_CLIENT_SECRET }}
           DRY_RUN: ${{ github.event.inputs.mode == 'dry-run' && 'true' || 'false' }}
         run: python comment_bot.py

@@ -18,6 +18,8 @@ Secrets (GitHub > Settings > Secrets and variables > Actions):
   GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, SHEETS_REFRESH_TOKEN   (same as autopost)
   IG_ACCESS_TOKEN                                                (same as autopost)
   YOUTUBE_COMMENTS_REFRESH_TOKEN  (scope youtube.force-ssl; falls back to YOUTUBE_REFRESH_TOKEN)
+  YOUTUBE_COMMENTS_CLIENT_ID / YOUTUBE_COMMENTS_CLIENT_SECRET  (optional: the Google app that key was made with,
+                                  if it is not the GOOGLE_CLIENT_ID app)
 Variables: COMMENT_SHEET_ID (default below), COMMENTS_PAUSED=true to pause.
 """
 from __future__ import annotations
@@ -84,12 +86,12 @@ def hit(text: str, words) -> str | None:
     return next((w for w in words if w and w in t), None)
 
 
-def google_token(refresh_token: str) -> str:
+def google_token(refresh_token: str, client_id: str = "", client_secret: str = "") -> str:
     r = requests.post("https://oauth2.googleapis.com/token", data={
-        "client_id": env("GOOGLE_CLIENT_ID"), "client_secret": env("GOOGLE_CLIENT_SECRET"),
+        "client_id": client_id or env("GOOGLE_CLIENT_ID"), "client_secret": client_secret or env("GOOGLE_CLIENT_SECRET"),
         "refresh_token": refresh_token, "grant_type": "refresh_token"}, timeout=HTTP_TIMEOUT)
     if r.status_code != 200:
-        sys.exit(f"Google sign-in failed ({r.status_code}): {r.text[:300]}")
+        raise RuntimeError(f"Google sign-in failed ({r.status_code}): {r.text[:300]}")
     return r.json()["access_token"]
 
 
@@ -312,7 +314,11 @@ def main() -> None:
         log("COMMENTS_PAUSED=true — nothing to do")
         return
     sheet_id = env("COMMENT_SHEET_ID", DEFAULT_SHEET_ID)
-    sheet = Sheet(google_token(env("SHEETS_REFRESH_TOKEN")), sheet_id)
+    try:
+        sheet_token = google_token(env("SHEETS_REFRESH_TOKEN"))
+    except RuntimeError as e:
+        sys.exit(str(e))
+    sheet = Sheet(sheet_token, sheet_id)
     posts = load_posts(sheet)
     seen, replied = load_log(sheet)
     log(f"sheet: {len(posts)} posts with repo/guide, {len(seen)} comments already in Log, dry_run={DRY_RUN}")
@@ -326,11 +332,15 @@ def main() -> None:
             log(f"instagram: {len(items)} recent comments")
         except Exception as e:
             log(f"instagram failed: {e}")
-    yt_refresh = os.environ.get("YOUTUBE_COMMENTS_REFRESH_TOKEN", "").strip() or os.environ.get("YOUTUBE_REFRESH_TOKEN", "").strip()
+    yt_comments = os.environ.get("YOUTUBE_COMMENTS_REFRESH_TOKEN", "").strip()
+    yt_refresh = yt_comments or os.environ.get("YOUTUBE_REFRESH_TOKEN", "").strip()
+    # the comments key may come from its own Google app (YOUTUBE_COMMENTS_CLIENT_ID / _SECRET)
+    yt_cid = os.environ.get("YOUTUBE_COMMENTS_CLIENT_ID", "").strip() if yt_comments else ""
+    yt_csec = os.environ.get("YOUTUBE_COMMENTS_CLIENT_SECRET", "").strip() if yt_comments else ""
     yt_token = None
     if yt_refresh:
         try:
-            yt_token = google_token(yt_refresh)
+            yt_token = google_token(yt_refresh, yt_cid, yt_csec)
             my_yt, items = youtube_comments(yt_token)
             sources.append(("youtube", my_yt, items))
             log(f"youtube: {len(items)} recent comments")
