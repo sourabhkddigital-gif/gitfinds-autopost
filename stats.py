@@ -12,8 +12,11 @@ insights permission and stay empty without it. A platform that fails is noted, t
 from __future__ import annotations
 
 import datetime as dt
+import json
 import os
+import re
 import sys
+import xml.etree.ElementTree as ET
 
 import requests
 
@@ -35,7 +38,7 @@ def one_line(t: str, n: int = 90) -> str:
     return t[:n] + ("…" if len(t) > n else "")
 
 
-def youtube():
+def youtube(links: list):
     tries = []
     if os.environ.get("YOUTUBE_COMMENTS_REFRESH_TOKEN"):
         tries.append(("comments key", os.environ["YOUTUBE_COMMENTS_REFRESH_TOKEN"],
@@ -71,9 +74,83 @@ def youtube():
             return ["YouTube", int(st.get("subscriberCount", 0)), int(st.get("viewCount", 0)), int(st.get("videoCount", 0)), ""], vids
         except Exception as e:  # try the next key
             errors.append(f"{name}: {e}")
-    note = "YouTube numbers need the YouTube comments key (the current key can only upload)."
-    ap.log(note + " Details: " + " | ".join(errors)[:500])
-    return ["YouTube", "", "", "", note], []
+    ap.log("YouTube API not allowed with the current keys, using the public channel page instead. "
+           + " | ".join(errors)[:300])
+    try:
+        return youtube_public(links)
+    except Exception as e:
+        note = "YouTube numbers could not be read from the public channel page."
+        ap.log(f"{note} {e}")
+        return ["YouTube", "", "", "", note], []
+
+
+UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+      "Accept-Language": "en-US,en;q=0.9"}
+COOKIES = {"CONSENT": "YES+cb", "SOCS": "CAI"}
+
+
+def _count(text: str) -> int | None:
+    m = re.match(r"([\d.,]+)\s*([KMB]?)", text.strip(), re.I)
+    if not m:
+        return None
+    n = float(m.group(1).replace(",", ""))
+    return int(round(n * {"": 1, "K": 1e3, "M": 1e6, "B": 1e9}[m.group(2).upper()]))
+
+
+def youtube_public(links: list):
+    """Public numbers, no key needed: subscribers from the channel page, views per video from the
+    channel's public feed (latest 15 videos) and from each posted video's page."""
+    links = [l for l in links if "youtu" in l]
+    if not links:
+        raise RuntimeError("no YouTube post links in the sheet to find the channel")
+    o = requests.get("https://www.youtube.com/oembed", params={"url": links[-1], "format": "json"}, timeout=30)
+    o.raise_for_status()
+    ch_url = o.json()["author_url"]
+    page = requests.get(ch_url, headers=UA, cookies=COOKIES, timeout=60).text
+    m = re.search(r'"(?:channelId|externalId)":"(UC[\w-]{22})"', page) or re.search(r"channel/(UC[\w-]{22})", page)
+    if not m:
+        raise RuntimeError(f"channel id not found on {ch_url}")
+    cid = m.group(1)
+    subs = None
+    for pat in (r'"content":"([\d.,]+[KMB]?) subscribers"', r'([\d.,]+[KMB]?) subscribers'):
+        sm = re.search(pat, page)
+        if sm:
+            subs = _count(sm.group(1))
+            break
+    vids, seen = [], set()
+    feed = requests.get("https://www.youtube.com/feeds/videos.xml", params={"channel_id": cid}, headers=UA, timeout=60)
+    feed.raise_for_status()
+    ns = {"a": "http://www.w3.org/2005/Atom", "yt": "http://www.youtube.com/xml/schemas/2015",
+          "media": "http://search.yahoo.com/mrss/"}
+    for e in ET.fromstring(feed.content).findall("a:entry", ns):
+        vid = e.findtext("yt:videoId", "", ns)
+        st = e.find("media:group/media:community/media:statistics", ns)
+        rt = e.find("media:group/media:community/media:starRating", ns)
+        seen.add(vid)
+        vids.append(["YouTube", one_line(e.findtext("a:title", "", ns)), f"https://youtube.com/shorts/{vid}",
+                     e.findtext("a:published", "", ns)[:10], int(st.get("views")) if st is not None else "",
+                     int(rt.get("count")) if rt is not None else "", "", now_s()])
+    for l in links:  # older posted videos that the feed no longer lists
+        vm = re.search(r"(?:shorts/|v=|youtu\.be/)([\w-]{11})", l)
+        if not vm or vm.group(1) in seen:
+            continue
+        try:
+            w = requests.get(f"https://www.youtube.com/watch?v={vm.group(1)}", headers=UA, cookies=COOKIES, timeout=60).text
+            views = re.search(r'"viewCount":"(\d+)"', w)
+            title = re.search(r'"title":"((?:[^"\\]|\\.)*)","lengthSeconds"', w)
+            date = re.search(r'"(?:publishDate|uploadDate)":"(\d{4}-\d{2}-\d{2})', w)
+            likes = re.search(r'"likeCount":"(\d+)"', w) or re.search(r'([\d,]+) likes', w)
+            vids.append(["YouTube", one_line(json.loads(f'"{title.group(1)}"') if title else l),
+                         f"https://youtube.com/shorts/{vm.group(1)}", date.group(1) if date else "",
+                         int(views.group(1)) if views else "", int(likes.group(1).replace(",", "")) if likes else "",
+                         "", now_s()])
+            seen.add(vm.group(1))
+        except Exception as e:
+            ap.log(f"(no numbers for {l}: {e})")
+    total = sum(v[4] for v in vids if isinstance(v[4], int))
+    ap.log(f"YouTube public numbers: channel {cid}, {subs} subscribers, {len(vids)} videos, {total} views")
+    return ["YouTube", subs if subs is not None else "", total, len(vids),
+            "Views are for the videos listed below; comment counts need the YouTube comments key."], vids
 
 
 def instagram():
@@ -120,7 +197,16 @@ def ensure_tab(h: dict, sid: str, title: str, head: list) -> None:
 def main() -> None:
     sid = ap.env("SHEET_ID")
     h = {"Authorization": f"Bearer {ap.google_token(ap.env('SHEETS_REFRESH_TOKEN'))}"}
-    (y_ch, y_v), (i_ch, i_v) = youtube(), instagram()
+    tok = ap.google_token(ap.env('SHEETS_REFRESH_TOKEN'))
+    links = []
+    for sheet, tab, col in ((ap.env("REPO_SHEET_ID", ap.REPO_SHEET_DEFAULT, required=False), "youtube ", "posted video url"),
+                            (sid, "YouTube", "Post Link")):
+        try:
+            links += [ap.Tab.get(r, col) for _, r in ap.Tab(tok, sheet, tab).rows if "youtu" in ap.Tab.get(r, col)]
+        except (Exception, SystemExit) as e:
+            ap.log(f"(could not read YouTube links from '{tab}': {e})")
+    links = list(dict.fromkeys(l.strip() for l in links))
+    (y_ch, y_v), (i_ch, i_v) = youtube(links), instagram()
     ensure_tab(h, sid, CH_TAB, CH_HEAD)
     ensure_tab(h, sid, VID_TAB, VID_HEAD)
     t = now_s()
