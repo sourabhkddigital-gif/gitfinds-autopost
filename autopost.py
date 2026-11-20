@@ -624,10 +624,36 @@ def github_note(subject: str, body: str) -> None:
         log(f"WARNING: GitHub update not posted: {e}")
 
 
+SHEET_TOKEN = {"t": ""}
+ROBOT_LOG_TAB = "Robot log"
+
+
+def robot_log(event: str, details: str) -> None:
+    """One line per result in the posting sheet's "Robot log" tab, read live by the GitFinds dashboard."""
+    tok, sid = SHEET_TOKEN["t"], os.environ.get("SHEET_ID", "")
+    if not tok or not sid:
+        return
+    h = {"Authorization": f"Bearer {tok}"}
+    rng = requests.utils.quote(f"'{ROBOT_LOG_TAB}'!A1")
+    row = [dt.datetime.now(IST).strftime("%Y-%m-%d %H:%M"), event, details[:900],
+           os.environ.get("GITHUB_RUN_ID", "")]
+    try:
+        r = requests.post(f"{SHEETS}/{sid}/values/{rng}:append?valueInputOption=RAW", headers=h,
+                          json={"values": [row]}, timeout=HTTP_TIMEOUT)
+        if r.status_code == 400 and "Unable to parse range" in r.text:  # tab missing: create it once
+            requests.post(f"{SHEETS}/{sid}:batchUpdate", headers=h, timeout=HTTP_TIMEOUT,
+                          json={"requests": [{"addSheet": {"properties": {"title": ROBOT_LOG_TAB}}}]})
+            requests.post(f"{SHEETS}/{sid}/values/{rng}:append?valueInputOption=RAW", headers=h, timeout=HTTP_TIMEOUT,
+                          json={"values": [["Time (IST)", "Event", "Details", "Run"], row]})
+    except requests.RequestException as e:
+        log(f"(robot log not written: {e})")
+
+
 def notify(subject: str, body: str) -> None:
     """Sends an update two ways: a GitHub notice (GitHub emails it) and, if set up,
     an email through the GitFinds Google Apps Script helper (goes to ALERT_EMAIL set there)."""
     NOTIFIED.append(subject)
+    robot_log(subject, body.replace("\n", " ").strip())
     github_note(subject, body)
     url, secret = os.environ.get("EMAIL_HOOK_URL", "").strip(), os.environ.get("EMAIL_HOOK_SECRET", "").strip()
     log(f"EMAIL: {subject}")
@@ -717,6 +743,8 @@ def run_daily(force: bool, dry: bool, sheet_token: str) -> None:
                    "Add new rows (Drive link, titles, hashtags) with Status Pending.")
             if not dry:
                 notify("❌ GitFinds: no video to post today", msg)
+            else:
+                robot_log("🧪 Check: all logins work", "No Pending videos in the sheet.")
             raise RuntimeError(msg)
         row_no, row, yt_done = pick[0], pick[1], False
         log(f"Today's video: row {row_no}: {Tab.get(row, 'YouTube Title')[:70]}")
@@ -734,6 +762,7 @@ def run_daily(force: bool, dry: bool, sheet_token: str) -> None:
     if dry:
         log(f"Instagram caption would be: {Tab.get(ig_row, 'Instagram Title')[:80]}")
         log(f"DRY RUN - would post row {row_no} at {post_time:%H:%M} on both. Nothing posted. Videos left: {pending_left()}")
+        robot_log("🧪 Check: all logins work", f"Next video: row {row_no} ({Tab.get(row, 'YouTube Title')[:80]}). Videos left: {pending_left()}")
         return
 
     post_at = dt.datetime.now(IST) if force else max(target, dt.datetime.now(IST))
@@ -925,6 +954,7 @@ def main() -> None:
         return
     force, dry = a.mode == "post-now", a.mode == "dry-run"
     sheet_token = google_token(env("SHEETS_REFRESH_TOKEN"))
+    SHEET_TOKEN["t"] = sheet_token
     if a.mode == "takeover":
         takeover(sheet_token)
         return
