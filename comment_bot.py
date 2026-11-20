@@ -40,7 +40,7 @@ IG_API = "https://graph.instagram.com/v21.0"
 YT_API = "https://www.googleapis.com/youtube/v3"
 HTTP_TIMEOUT = 60
 DEFAULT_SHEET_ID = "176CJln8W2-mol-2FoBz1OJ786UINrFteR48QjPUO3pA"
-LOOKBACK_HOURS = 72
+LOOKBACK_HOURS = int(os.environ.get("LOOKBACK_HOURS") or 72)
 MAX_REPLIES_PER_RUN = int(os.environ.get("MAX_REPLIES_PER_RUN", "20"))
 DRY_RUN = os.environ.get("DRY_RUN", "").lower() in ("1", "true", "yes")
 
@@ -195,15 +195,17 @@ def load_posts(sheet: Sheet) -> dict:
 
 
 def load_log(sheet: Sheet):
-    seen, replied = set(), set()
+    seen, replied, flagged = set(), set(), set()
     for r in sheet.rows("Log"):
         p, cid, pid, uid, st = (r.get("platform", ""), r.get("comment_id", ""), r.get("post_id", ""),
                                 r.get("commenter_id", ""), r.get("status", ""))
-        if cid:
+        if cid and st == "flagged":
+            flagged.add(f"{p}:{cid}")  # retried once its post's repo is added
+        elif cid:
             seen.add(f"{p}:{cid}")
         if st in ("sent", "dry-run") and uid:
             replied.add(f"{p}:{pid}:{uid}")
-    return seen, replied
+    return seen, replied, flagged - seen
 
 
 # ---------------------------------------------------------------- instagram
@@ -320,7 +322,7 @@ def main() -> None:
         sys.exit(str(e))
     sheet = Sheet(sheet_token, sheet_id)
     posts = load_posts(sheet)
-    seen, replied = load_log(sheet)
+    seen, replied, flagged = load_log(sheet)
     log(f"sheet: {len(posts)} posts with repo/guide, {len(seen)} comments already in Log, dry_run={DRY_RUN}")
 
     sources = []
@@ -354,6 +356,8 @@ def main() -> None:
             own_text = norm(c["text"]).startswith(("sent you the repo", "here you go 👉 repo"))
             if key in seen or c["is_own"] or own_text or not c["text"].strip():
                 continue
+            if key in flagged and not posts.get(c["key"]):
+                continue  # still no repo for this post: already flagged once, don't log it again
             if sent >= MAX_REPLIES_PER_RUN:
                 break
             seen.add(key)
