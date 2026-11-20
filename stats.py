@@ -71,8 +71,8 @@ def youtube():
             return ["YouTube", int(st.get("subscriberCount", 0)), int(st.get("viewCount", 0)), int(st.get("videoCount", 0)), ""], vids
         except Exception as e:  # try the next key
             errors.append(f"{name}: {e}")
-    note = "No YouTube key can read the channel yet (needs the YouTube comments key). " + " | ".join(errors)[:300]
-    ap.log(note)
+    note = "YouTube numbers need the YouTube comments key (the current key can only upload)."
+    ap.log(note + " Details: " + " | ".join(errors)[:500])
     return ["YouTube", "", "", "", note], []
 
 
