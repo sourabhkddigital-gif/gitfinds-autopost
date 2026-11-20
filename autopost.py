@@ -748,6 +748,15 @@ def run_daily(force: bool, dry: bool, sheet_token: str) -> None:
             raise RuntimeError(msg)
         row_no, row, yt_done = pick[0], pick[1], False
         log(f"Today's video: row {row_no}: {Tab.get(row, 'YouTube Title')[:70]}")
+        missing = [c for c in ("YouTube Title", "Description") if not Tab.get(row, c)]
+        if missing:
+            msg = (f"Row {row_no} in the YouTube tab has no {' / '.join(missing)} yet, so it was not posted "
+                   "(the caption writer fills these in automatically from the repo; check that the row has a Repo No.).")
+            if not dry:
+                notify("❌ GitFinds: today's video has no title/description yet", msg)
+            else:
+                robot_log("🧪 Check: text missing", msg)
+            raise RuntimeError(msg)
     yt_link = Tab.get(row, "Post Link")
 
     ig_match = _same_video(ig, row)
