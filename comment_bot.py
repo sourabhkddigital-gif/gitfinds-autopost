@@ -226,7 +226,7 @@ def instagram_comments(token: str):
     cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=LOOKBACK_HOURS)
     fields = ("id,caption,permalink,timestamp,comments.limit(50){id,text,username,timestamp,from,"
               "replies{id,text,username,timestamp,from}}")
-    media = ig("GET", "me/media", token, params={"fields": fields, "limit": 15}).get("data", [])
+    media = ig("GET", "me/media", token, params={"fields": fields, "limit": 40}).get("data", [])
     out = []
     for m in media:
         for c in (m.get("comments") or {}).get("data", []):
@@ -279,7 +279,7 @@ def youtube_comments(token: str):
                            f"not GitFinds ({want}). Make the key again and pick the GitFinds channel when Google asks.")
     uploads = ch["contentDetails"]["relatedPlaylists"]["uploads"]
     vids = [(i["snippet"]["resourceId"]["videoId"], i["snippet"]["title"]) for i in
-            yt("GET", "playlistItems", token, params={"part": "snippet", "playlistId": uploads, "maxResults": 10})["items"]]
+            yt("GET", "playlistItems", token, params={"part": "snippet", "playlistId": uploads, "maxResults": 50})["items"]]
     cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=LOOKBACK_HOURS)
     out = []
     for vid, title in vids:
