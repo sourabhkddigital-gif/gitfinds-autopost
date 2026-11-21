@@ -68,6 +68,9 @@ jobs:
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           SHEETS_REFRESH_TOKEN: ${{ secrets.SHEETS_REFRESH_TOKEN }}
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+          YOUTUBE_COMMENTS_REFRESH_TOKEN: ${{ secrets.YOUTUBE_COMMENTS_REFRESH_TOKEN }}
+          YOUTUBE_COMMENTS_CLIENT_ID: ${{ secrets.YOUTUBE_COMMENTS_CLIENT_ID }}
+          YOUTUBE_COMMENTS_CLIENT_SECRET: ${{ secrets.YOUTUBE_COMMENTS_CLIENT_SECRET }}
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
         run: python stats.py
       - name: Keep the daily schedule alive
