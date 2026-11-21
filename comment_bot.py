@@ -247,11 +247,14 @@ def instagram_comments(token: str):
 
 def instagram_reply(token: str, my_id: str, c: dict, public: str, dm: str) -> str:
     notes = []
-    try:
+    if not dm:
+        notes.append("dm:skipped (already sent to this person)")
+    else:
+      try:
         ig("POST", f"{my_id}/messages", token, json={"recipient": {"comment_id": c["comment_id"]},
                                                      "message": {"text": dm}})
         notes.append("dm:ok")
-    except Exception as e:
+      except Exception as e:
         notes.append(f"dm:FAIL {e}")
     try:
         ig("POST", f"{c['comment_id']}/replies", token, data={"message": public})
@@ -398,9 +401,7 @@ def main() -> None:
             base = [now, platform, c["post_id"], c["post_url"], c["user_id"], c["user_name"], c["comment_id"],
                     c["text"][:500]]
             rk = f"{platform}:{c['post_id']}:{c['user_id']}"
-            if rk in replied:
-                sheet.append_log(base + ["skip", "", "skipped", "already replied to this person on this post"])
-                continue
+            repeat = rk in replied  # this person already got the links on this post: reply again, but no second DM
             w = hit(c["text"], SPAM)
             if w:
                 sheet.append_log(base + ["skip-spam", "", "skipped", f"matched: {w}"])
@@ -414,8 +415,14 @@ def main() -> None:
                 sheet.append_log(base + ["flag-no-post", "", "flagged",
                                          "post not in sheet — add its URL to the platform tab with its repo no."])
                 continue
-            fill = lambda s: (s.replace("{name}", c["user_name"] or "").replace("{repo}", post.get("repo", ""))
-                              .replace("{guide}", post.get("guide", "")))
+            def fill(s, post=post, c=c):
+                guide = post.get("guide", "").strip()
+                if not guide:  # no setup guide in the Repo Sheet: leave the guide part out instead of an empty link
+                    s = re.sub(r"\s*\|\s*Setup guide:\s*\{guide\}", "", s)
+                    s = re.sub(r"\n?Setup guide:\s*\{guide\}", "", s)
+                    s = s.replace("repo + setup guide", "repo")
+                return (s.replace("{name}", c["user_name"] or "").replace("{repo}", post.get("repo", ""))
+                        .replace("{guide}", guide))
             if DRY_RUN:
                 reply = fill(DM_TEXT if platform == "instagram" else PUBLIC_TEXT_YT)
                 sheet.append_log(base + ["post-match", reply[:500], "dry-run", "would send"])
@@ -423,8 +430,9 @@ def main() -> None:
                 continue
             time.sleep(random.uniform(3, 12))
             if platform == "instagram":
-                note = instagram_reply(ig_token, my_id, c, fill(PUBLIC_TEXT_IG), fill(DM_TEXT))
-                reply = fill(DM_TEXT)
+                public = fill(PUBLIC_TEXT_IG) if not repeat else "Check your DMs 📩 the repo link is there!"
+                note = instagram_reply(ig_token, my_id, c, public, "" if repeat else fill(DM_TEXT))
+                reply = public if repeat else fill(DM_TEXT)
             else:
                 note = youtube_reply(yt_token, c, fill(PUBLIC_TEXT_YT))
                 reply = fill(PUBLIC_TEXT_YT)
