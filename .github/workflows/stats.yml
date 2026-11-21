@@ -4,7 +4,7 @@ name: GitFinds channel stats
 # ("Channel stats" and "Video stats" tabs) so the GitFinds dashboard can show them.
 on:
   schedule:
-    - cron: "17 */6 * * *"   # every 6 hours (GitHub may run it late; the dashboard shows the time)
+    - cron: "17 * * * *"     # every hour (GitHub may run it late; the dashboard shows the time)
   workflow_dispatch:
 
 concurrency:

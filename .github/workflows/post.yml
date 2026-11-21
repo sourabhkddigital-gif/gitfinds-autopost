@@ -59,6 +59,17 @@ jobs:
           IG_PAUSED: ${{ vars.IG_PAUSED }}
           GH_TOKEN: ${{ github.token }}
         run: python autopost.py --platform daily --mode "${{ inputs.mode || 'normal' }}"
+      - name: Refresh channel numbers for the dashboard
+        if: always()
+        continue-on-error: true
+        env:
+          SHEET_ID: ${{ secrets.SHEET_ID }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          SHEETS_REFRESH_TOKEN: ${{ secrets.SHEETS_REFRESH_TOKEN }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+        run: python stats.py
       - name: Keep the daily schedule alive
         # GitHub turns off scheduled workflows after 60 days without repo activity.
         if: always() && github.event_name == 'schedule'
