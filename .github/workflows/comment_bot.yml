@@ -10,6 +10,10 @@ on:
         type: choice
         options: [dry-run, live]
         default: dry-run
+      check_comment:
+        description: "Diagnostic only: a YouTube comment id to show its replies (replies nothing)"
+        type: string
+        default: ""
       lookback_hours:
         description: "How far back to look for comments, in hours (empty = 72). Use 336 to catch up 2 weeks."
         type: string
@@ -47,6 +51,7 @@ jobs:
           YOUTUBE_COMMENTS_REFRESH_TOKEN: ${{ secrets.YOUTUBE_COMMENTS_REFRESH_TOKEN }}
           YOUTUBE_COMMENTS_CLIENT_ID: ${{ secrets.YOUTUBE_COMMENTS_CLIENT_ID }}
           YOUTUBE_COMMENTS_CLIENT_SECRET: ${{ secrets.YOUTUBE_COMMENTS_CLIENT_SECRET }}
+          CHECK_YT_COMMENT: ${{ github.event.inputs.check_comment }}
           LOOKBACK_HOURS: ${{ github.event.inputs.lookback_hours }}
           DRY_RUN: ${{ github.event.inputs.mode == 'dry-run' && 'true' || 'false' }}
         run: python comment_bot.py

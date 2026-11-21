@@ -348,6 +348,22 @@ def main() -> None:
     if yt_refresh:
         try:
             yt_token = google_token(yt_refresh, yt_cid, yt_csec)
+            check = os.environ.get("CHECK_YT_COMMENT", "").strip()
+            if check:  # diagnostic: show the replies under one comment and how YouTube holds them
+                reps = yt("GET", "comments", yt_token, params={"part": "snippet", "parentId": check, "maxResults": 20,
+                                                                "textFormat": "plainText"}).get("items", [])
+                log(f"check {check}: {len(reps)} visible replies")
+                for r in reps:
+                    sn = r["snippet"]
+                    log(f"  reply {r['id']} by {sn.get('authorDisplayName')}: {sn.get('textDisplay', '')[:120]}")
+                for status in ("heldForReview", "likelySpam"):
+                    try:
+                        th = yt("GET", "commentThreads", yt_token, params={"part": "snippet,replies", "allThreadsRelatedToChannelId": GITFINDS_YT_CHANNEL,
+                                                                          "moderationStatus": status, "maxResults": 50})["items"]
+                        log(f"  {status}: {len(th)} threads " + "; ".join(t["snippet"]["topLevelComment"]["snippet"].get("textDisplay", "")[:60] for t in th))
+                    except Exception as e:
+                        log(f"  {status}: could not read ({str(e)[:150]})")
+                return
             my_yt, items = youtube_comments(yt_token)
             sources.append(("youtube", my_yt, items))
             log(f"youtube: {len(items)} recent comments")
