@@ -200,6 +200,8 @@ def load_log(sheet: Sheet):
     for r in sheet.rows("Log"):
         p, cid, pid, uid, st = (r.get("platform", ""), r.get("comment_id", ""), r.get("post_id", ""),
                                 r.get("commenter_id", ""), r.get("status", ""))
+        if cid and st == "skipped" and "already replied to this person" in r.get("note", ""):
+            continue  # old rule (one reply per person); every comment gets a reply now
         if cid and st == "flagged":
             flagged.add(f"{p}:{cid}")  # retried once its post's repo is added
         elif cid:
