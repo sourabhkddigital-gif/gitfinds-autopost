@@ -308,9 +308,9 @@ def youtube_comments(token: str):
 
 def youtube_reply(token: str, c: dict, text: str) -> str:
     try:
-        yt("POST", "comments", token, params={"part": "snippet"},
-           json={"snippet": {"parentId": c["parent"], "textOriginal": text}})
-        return "public:ok"
+        res = yt("POST", "comments", token, params={"part": "snippet"},
+                 json={"snippet": {"parentId": c["parent"], "textOriginal": text}})
+        return f"public:ok id={res.get('id', '')}"
     except Exception as e:
         return f"public:FAIL {e}"
 
@@ -349,6 +349,18 @@ def main() -> None:
         try:
             yt_token = google_token(yt_refresh, yt_cid, yt_csec)
             check = os.environ.get("CHECK_YT_COMMENT", "").strip()
+            if check.startswith("reply:"):  # diagnostic: post one test reply and see whether YouTube keeps it
+                check = check[6:]
+                variants = {"links": "Here you go 👉 Repo: https://github.com/gitroomhq/postiz-app | Setup guide: https://docs.google.com/document/d/1wYLU9Vm1fMZxYgeNkQj_0aSsh6fcN2ND0j8el9AjWZQ/edit?usp=sharing",
+                            "plain": "Thanks! The repo is github.com/gitroomhq/postiz-app 🙌"}
+                for name, text in variants.items():
+                    try:
+                        res = yt("POST", "comments", yt_token, params={"part": "snippet"},
+                                 json={"snippet": {"parentId": check, "textOriginal": text}})
+                        log(f"test reply '{name}' posted: id={res.get('id')} status={res.get('snippet', {}).get('moderationStatus')}")
+                    except Exception as e:
+                        log(f"test reply '{name}' failed: {e}")
+                time.sleep(20)
             if check:  # diagnostic: show the replies under one comment and how YouTube holds them
                 reps = yt("GET", "comments", yt_token, params={"part": "snippet", "parentId": check, "maxResults": 20,
                                                                 "textFormat": "plainText"}).get("items", [])
