@@ -54,6 +54,9 @@ def youtube(links: list):
             if r.status_code != 200:
                 raise RuntimeError(f"YouTube {r.status_code}: {r.text[:200]}")
             ch = r.json()["items"][0]
+            want = os.environ.get("YT_CHANNEL_ID") or cb.GITFINDS_YT_CHANNEL
+            if want and ch["id"] != want:
+                raise RuntimeError(f"key belongs to channel '{ch['snippet'].get('title')}', not GitFinds")
             st = ch["statistics"]
             uploads = ch["contentDetails"]["relatedPlaylists"]["uploads"]
             items = requests.get(f"{YT}/playlistItems", headers=h, timeout=60,

@@ -40,6 +40,7 @@ IG_API = "https://graph.instagram.com/v21.0"
 YT_API = "https://www.googleapis.com/youtube/v3"
 HTTP_TIMEOUT = 60
 DEFAULT_SHEET_ID = "176CJln8W2-mol-2FoBz1OJ786UINrFteR48QjPUO3pA"
+GITFINDS_YT_CHANNEL = "UCJUg3xtSukZb29FScH8M99A"  # the GitFinds YouTube channel
 LOOKBACK_HOURS = int(os.environ.get("LOOKBACK_HOURS") or 72)
 MAX_REPLIES_PER_RUN = int(os.environ.get("MAX_REPLIES_PER_RUN", "20"))
 DRY_RUN = os.environ.get("DRY_RUN", "").lower() in ("1", "true", "yes")
@@ -270,8 +271,12 @@ def yt(method: str, path: str, token: str, **kw):
 
 
 def youtube_comments(token: str):
-    ch = yt("GET", "channels", token, params={"part": "id,contentDetails", "mine": "true"})["items"][0]
+    ch = yt("GET", "channels", token, params={"part": "id,contentDetails,snippet", "mine": "true"})["items"][0]
     my_id = ch["id"]
+    want = os.environ.get("YT_CHANNEL_ID") or GITFINDS_YT_CHANNEL
+    if want and my_id != want:
+        raise RuntimeError(f"the YouTube comments key belongs to the channel '{ch['snippet'].get('title')}' ({my_id}), "
+                           f"not GitFinds ({want}). Make the key again and pick the GitFinds channel when Google asks.")
     uploads = ch["contentDetails"]["relatedPlaylists"]["uploads"]
     vids = [(i["snippet"]["resourceId"]["videoId"], i["snippet"]["title"]) for i in
             yt("GET", "playlistItems", token, params={"part": "snippet", "playlistId": uploads, "maxResults": 10})["items"]]
@@ -347,7 +352,7 @@ def main() -> None:
             sources.append(("youtube", my_yt, items))
             log(f"youtube: {len(items)} recent comments")
         except Exception as e:
-            log(f"youtube failed (needs a refresh token with youtube.force-ssl scope): {e}")
+            log(f"youtube failed: {e}")
 
     sent = 0
     for platform, my_id, items in sources:
