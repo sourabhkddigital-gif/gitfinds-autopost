@@ -391,7 +391,7 @@ def main() -> None:
     for platform, my_id, items in sources:
         for c in items:
             key = f"{platform}:{c['comment_id']}"
-            own_text = norm(c["text"]).startswith(("sent you the repo", "here you go 👉 repo"))
+            own_text = norm(c["text"]).startswith(("sent you the repo", "here you go 👉 repo", "check your dms"))
             if key in seen or c["is_own"] or own_text or not c["text"].strip():
                 continue
             if key in flagged and not posts.get(c["key"]):
