@@ -46,7 +46,12 @@ MAX_REPLIES_PER_RUN = int(os.environ.get("MAX_REPLIES_PER_RUN", "20"))
 DRY_RUN = os.environ.get("DRY_RUN", "").lower() in ("1", "true", "yes")
 
 DM_TEXT = os.environ.get("DM_TEXT") or (
-    "Hey {name}! Here is the GitHub repo: {repo}\nSetup guide: {guide}\nReply here if you get stuck 🙌")
+    "Hey{at_name} 👋 thanks for the comment!\n\n"
+    "Here's {tool}, as promised:\n"
+    "🔗 GitHub: {repo}\n"
+    "📘 Setup guide (step by step): {guide}\n\n"
+    "Stuck anywhere? Just reply here 🙌\n"
+    "Follow @gitfinds for a new free tool every day at 7 PM.")
 PUBLIC_TEXT_IG = os.environ.get("PUBLIC_TEXT_IG") or "Sent you the repo + setup guide in your DMs 📩"
 PUBLIC_TEXT_YT = os.environ.get("PUBLIC_TEXT_YT") or "Here you go 👉 Repo: {repo} | Setup guide: {guide}"
 
@@ -421,10 +426,13 @@ def main() -> None:
                 guide = post.get("guide", "").strip()
                 if not guide:  # no setup guide in the Repo Sheet: leave the guide part out instead of an empty link
                     s = re.sub(r"\s*\|\s*Setup guide:\s*\{guide\}", "", s)
-                    s = re.sub(r"\n?Setup guide:\s*\{guide\}", "", s)
+                    s = re.sub(r"\n[^\n]*\{guide\}", "", s)  # drop the whole setup-guide line
                     s = s.replace("repo + setup guide", "repo")
-                return (s.replace("{name}", c["user_name"] or "").replace("{repo}", post.get("repo", ""))
-                        .replace("{guide}", guide))
+                repo = post.get("repo", "").strip()
+                tool = repo.rstrip("/").split("/")[-1] if repo else "the repo"
+                name = (c["user_name"] or "").strip()
+                return (s.replace("{at_name}", f" @{name}" if name else "").replace("{name}", name)
+                        .replace("{tool}", tool).replace("{repo}", repo).replace("{guide}", guide))
             if DRY_RUN:
                 reply = fill(DM_TEXT if platform == "instagram" else PUBLIC_TEXT_YT)
                 sheet.append_log(base + ["post-match", reply[:500], "dry-run", "would send"])

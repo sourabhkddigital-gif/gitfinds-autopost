@@ -35,7 +35,7 @@ const MAX_PER_RUN = 10;
 const YT_RECENT_VIDEOS = 3;      // checked every minute
 const YT_ALL_VIDEOS = 10;        // checked every 10 minutes
 const FAIL_ALERT_AFTER = 15;     // consecutive failed checks (≈15 min) before an email
-const DM_TEXT = 'Hey {name}! Here is the GitHub repo: {repo}\nSetup guide: {guide}\nReply here if you get stuck 🙌';
+const DM_TEXT = 'Hey{at_name} 👋 thanks for the comment!\n\nHere\'s {tool}, as promised:\n🔗 GitHub: {repo}\n📘 Setup guide (step by step): {guide}\n\nStuck anywhere? Just reply here 🙌\nFollow @gitfinds for a new free tool every day at 7 PM.';
 const PUBLIC_TEXT_IG = 'Sent you the repo + setup guide in your DMs 📩';
 const PUBLIC_TEXT_YT = 'Here you go 👉 Repo: {repo} | Setup guide: {guide}';
 const SPAM = ['http://', 'https://', 'www.', 'crypto', 'forex', 'follow for follow', 'f4f', 'check my page',
@@ -66,7 +66,13 @@ const prop_ = (k, d) => String(props_().getProperty(k) || d || '').trim();
 const dry_ = () => prop_('DRY_RUN').toLowerCase() === 'true';
 const norm_ = s => String(s || '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 const hit_ = (t, words) => words.find(w => norm_(t).includes(w)) || null;
-const fill_ = (s, c, post) => s.replace(/{name}/g, c.user_name || '').replace(/{repo}/g, post.repo || '').replace(/{guide}/g, post.guide || '');
+const fill_ = (s, c, post) => {
+  const repo = String(post.repo || '').trim(), guide = String(post.guide || '').trim(), name = String(c.user_name || '').trim();
+  if (!guide) s = s.replace(/\s*\|\s*Setup guide:\s*\{guide\}/g, '').replace(/\n[^\n]*\{guide\}/g, '');
+  const tool = repo ? repo.replace(/\/+$/, '').split('/').pop() : 'the repo';
+  return s.replace(/{at_name}/g, name ? ' @' + name : '').replace(/{name}/g, name).replace(/{tool}/g, tool)
+          .replace(/{repo}/g, repo).replace(/{guide}/g, guide);
+};
 const now_ = () => Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyy-MM-dd HH:mm:ss');
 const today_ = () => Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyy-MM-dd');
 const istMinutes_ = () => { const t = Utilities.formatDate(new Date(), 'Asia/Kolkata', 'HH:mm').split(':'); return +t[0] * 60 + +t[1]; };
